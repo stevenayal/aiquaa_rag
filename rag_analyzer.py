@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -89,8 +90,12 @@ KEYWORD_MAP: dict[str, list[str]] = {
     "atm":                ["atm", "cajero automático", "cajero", "dispensador"],
     "tarjetas":           ["tarjeta de crédito", "tarjeta de débito", "tarjeta prepago",
                            "tarjeta", "plástico", "pos", "punto de venta"],
-    "cuenta_corriente":   ["cuenta corriente", "cta cte", "cuenta de depósito"],
-    "cuenta_basica":      ["cuenta básica", "cuenta básica de ahorro", "cuenta simplificada"],
+    "cuenta_corriente":   ["cuenta corriente", "cuentas corrientes", "cta cte",
+                           "cuenta de depósito", "cuentas de depósito",
+                           "cuenta de deposito", "cuentas de depositos"],
+    "cuenta_basica":      ["cuenta básica", "cuentas básicas", "cuenta básica de ahorro",
+                           "cuentas básicas de ahorro", "cuenta basica",
+                           "cuenta simplificada", "cuenta básica de ahorro"],
     "capital":            ["capital mínimo", "solvencia", "patrimonio", "capital regulatorio",
                            "adecuación de capital", "basilea"],
     "cambios":            ["tipo de cambio", "divisa", "moneda extranjera", "dólar",
@@ -106,9 +111,14 @@ KEYWORD_MAP: dict[str, list[str]] = {
     "reporto":            ["reporto", "repo", "operaciones de reporto"],
     "tasas_interes":      ["tasa de interés", "tasa activa", "tasa pasiva", "tna", "tea",
                            "tasa nominal", "interés"],
-    "tercerizacion":      ["tercerización", "outsourcing", "proveedor externo", "tercero"],
+    "tercerizacion":      ["tercerización", "tercerizacion", "outsourcing",
+                           "proveedor externo", "servicio tercerizado",
+                           "proveedor de servicios tecnológicos"],
     "credito_cartera":    ["crédito", "préstamo", "microcrédito", "hipoteca",
-                           "línea de crédito", "financiamiento", "cartera"],
+                           "hipotecario", "crédito hipotecario", "crédito de consumo",
+                           "línea de crédito", "financiamiento", "cartera",
+                           "cuota ingreso", "cuota/ingreso", "relación cuota",
+                           "score crediticio", "riesgo crediticio"],
     "depositos":          ["depósito", "ahorro", "plazo fijo", "caja de ahorro",
                            "certificado de depósito"],
     "contabilidad":       ["contabilidad", "balance", "estado financiero",
@@ -133,7 +143,9 @@ KEYWORD_MAP: dict[str, list[str]] = {
                            "permiso de operación"],
     "internet":           ["internet", "banda ancha", "acceso a internet", "isp",
                            "fibra óptica", "datos móviles"],
-    "telefonia":          ["telefonía", "celular", "móvil", "red móvil", "portabilidad"],
+    "telefonia":          ["telefonía", "celular", "móvil", "móviles", "red móvil",
+                           "portabilidad", "portabilidad numérica", "operadora",
+                           "operadoras móviles"],
     "radiodifusion":      ["televisión", "radio", "radiodifusión", "señal de tv", "cable"],
     "tarifas":            ["tarifa", "precio del servicio", "cargo de acceso"],
     "interconexion":      ["interconexión", "acceso a red", "interconnect"],
@@ -144,17 +156,31 @@ BANCA_SIGNALS    = ["banco", "financiera", "bcp", "superintendencia de bancos",
                     "entidad financiera", "sipap", "spi", "transferencia bancaria",
                     "cuenta", "depósito", "crédito", "tarjeta", "atm", "cajero"]
 TELECOM_SIGNALS  = ["conatel", "telecom", "telecomunicaciones", "internet", "celular",
-                    "móvil", "señal", "espectro", "frecuencia", "televisión", "radio",
-                    "fibra óptica", "isp"]
+                    "móvil", "móviles", "operadora", "señal", "espectro", "frecuencia",
+                    "televisión", "radio", "fibra óptica", "isp", "portabilidad numérica"]
+
+
+def _normalize(s: str) -> str:
+    """Lowercase + strip accents → accent-insensitive Spanish matching."""
+    return unicodedata.normalize("NFD", s.lower()).encode("ascii", "ignore").decode()
+
+
+# Pre-normalized keyword lists (built once at import, O(1) per lookup)
+_KEYWORD_MAP_NORM: dict[str, list[str]] = {
+    topic: [_normalize(kw) for kw in kws]
+    for topic, kws in KEYWORD_MAP.items()
+}
+_BANCA_SIGNALS_NORM   = [_normalize(kw) for kw in BANCA_SIGNALS]
+_TELECOM_SIGNALS_NORM = [_normalize(kw) for kw in TELECOM_SIGNALS]
 
 
 def classify_keywords(requirement: str) -> "Classification":
     """Clasificador determinístico por keywords. No requiere API."""
-    text = requirement.lower()
+    text = _normalize(requirement)   # accent-insensitive
 
     # 1. Detectar industria
-    banca_score   = sum(1 for kw in BANCA_SIGNALS   if kw in text)
-    telecom_score = sum(1 for kw in TELECOM_SIGNALS  if kw in text)
+    banca_score   = sum(1 for kw in _BANCA_SIGNALS_NORM   if kw in text)
+    telecom_score = sum(1 for kw in _TELECOM_SIGNALS_NORM  if kw in text)
 
     if banca_score > telecom_score:
         industry = "banca"
@@ -171,7 +197,7 @@ def classify_keywords(requirement: str) -> "Classification":
 
     # 2. Detectar topics
     topics = []
-    for topic, keywords in KEYWORD_MAP.items():
+    for topic, keywords in _KEYWORD_MAP_NORM.items():
         if any(kw in text for kw in keywords):
             # Filtrar topics coherentes con la industria detectada
             if industry == "banca" and topic in TOPICS_BANCA:
