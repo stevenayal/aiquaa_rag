@@ -3,21 +3,25 @@ rag_analyzer.py — Analiza requerimientos y devuelve regulaciones aplicables.
 
 Flujo:
   1. Recibe requerimiento/feature en texto libre
-  2. Claude Haiku clasifica: industry + topics + search_query reformulada
+  2. Clasificador (keyword rules o Claude Haiku si hay ANTHROPIC_API_KEY)
+     → industry + topics + search_query
   3. Voyage AI embeds search_query → vector
   4. pgvector busca chunks filtrados por industry + topics
-  5. Claude Sonnet analiza qué regulaciones aplican al requerimiento
+  5. Si hay ANTHROPIC_API_KEY: Claude Sonnet genera análisis narrativo
+     Si no: imprime chunks formateados directamente (igual de útil para QA)
 
 Uso:
-  python rag_analyzer.py "El módulo debe permitir transferencias SIPAP entre cuentas"
+  python rag_analyzer.py "El sistema debe permitir transferencias SIPAP 24/7"
   python rag_analyzer.py --interactive
   python rag_analyzer.py --industry banca --topics transferencias,riesgo "..."
+  python rag_analyzer.py --json "..."
 """
 
 import argparse
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -46,16 +50,19 @@ log = logging.getLogger(__name__)
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
 SUPABASE_KEY   = os.environ["SUPABASE_SERVICE_KEY"]
 VOYAGE_API_KEY = os.environ["VOYAGE_API_KEY"]
-ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")  # opcional
 
 VOYAGE_MODEL      = "voyage-3"
-CLAUDE_CLASSIFIER = "claude-haiku-4-5"   # rápido/barato para clasificación
-CLAUDE_ANALYZER   = "claude-sonnet-4-5"  # calidad para el análisis final
+CLAUDE_CLASSIFIER = "claude-haiku-4-5-20251014"
+CLAUDE_ANALYZER   = "claude-sonnet-4-5-20251022"
 
 DEFAULT_TOP_K     = 10
 DEFAULT_THRESHOLD = 0.38
 
-# Taxonomía completa — se pasa al clasificador para que use los mismos valores
+HAS_CLAUDE = bool(ANTHROPIC_KEY)
+
+# ── Taxonomía ──────────────────────────────────────────────────────────────────
+
 TOPICS_BANCA = [
     "transferencias", "atm", "tarjetas", "cuenta_corriente", "cuenta_basica",
     "capital", "cambios", "auditoria", "riesgo", "fraude_seguridad",
@@ -70,80 +77,232 @@ TOPICS_TELECOM = [
 ]
 ALL_TOPICS = TOPICS_BANCA + TOPICS_TELECOM
 
+# ── Clasificador por keywords (sin API) ────────────────────────────────────────
+#
+# Mapa: topic → lista de keywords que activan ese topic en el requerimiento.
+# El orden importa: keywords más específicos primero.
 
-# ── Prompts ────────────────────────────────────────────────────────────────────
+KEYWORD_MAP: dict[str, list[str]] = {
+    # Banca
+    "transferencias":     ["sipap", "spi", "transferencia", "pago interbancario",
+                           "remesa", "acreditación", "débito automático", "transferir"],
+    "atm":                ["atm", "cajero automático", "cajero", "dispensador"],
+    "tarjetas":           ["tarjeta de crédito", "tarjeta de débito", "tarjeta prepago",
+                           "tarjeta", "plástico", "pos", "punto de venta"],
+    "cuenta_corriente":   ["cuenta corriente", "cta cte", "cuenta de depósito"],
+    "cuenta_basica":      ["cuenta básica", "cuenta básica de ahorro", "cuenta simplificada"],
+    "capital":            ["capital mínimo", "solvencia", "patrimonio", "capital regulatorio",
+                           "adecuación de capital", "basilea"],
+    "cambios":            ["tipo de cambio", "divisa", "moneda extranjera", "dólar",
+                           "euro", "casa de cambio", "fx"],
+    "auditoria":          ["auditoría", "auditor externo", "informe de auditoría", "revisión"],
+    "riesgo":             ["riesgo operacional", "riesgo de crédito", "riesgo de mercado",
+                           "riesgo de liquidez", "gestión de riesgo", "riesgo"],
+    "fraude_seguridad":   ["fraude", "seguridad", "ciberseguridad", "phishing",
+                           "autenticación", "doble factor", "2fa", "otp", "pin"],
+    "tecnologia":         ["nube", "cloud", "api", "sistema", "plataforma digital",
+                           "automatización", "microservicio", "software"],
+    "firma_digital":      ["firma digital", "firma electrónica", "certificado digital"],
+    "reporto":            ["reporto", "repo", "operaciones de reporto"],
+    "tasas_interes":      ["tasa de interés", "tasa activa", "tasa pasiva", "tna", "tea",
+                           "tasa nominal", "interés"],
+    "tercerizacion":      ["tercerización", "outsourcing", "proveedor externo", "tercero"],
+    "credito_cartera":    ["crédito", "préstamo", "microcrédito", "hipoteca",
+                           "línea de crédito", "financiamiento", "cartera"],
+    "depositos":          ["depósito", "ahorro", "plazo fijo", "caja de ahorro",
+                           "certificado de depósito"],
+    "contabilidad":       ["contabilidad", "balance", "estado financiero",
+                           "plan de cuentas", "registro contable"],
+    "liquidez":           ["liquidez", "encaje", "encaje legal", "reserva"],
+    "aml":                ["lavado", "antilavado", "aml", "kyc", "conozca su cliente",
+                           "prevención de lavado", "financiamiento del terrorismo",
+                           "uif", "reporte de operación"],
+    "gobierno_corporativo": ["gobierno corporativo", "directorio", "junta directiva",
+                              "comité de auditoría", "código de ética"],
+    "mercado_capitales":  ["mercado de capitales", "bolsa", "acciones", "bonos",
+                           "fondo de inversión", "fondo mutuo", "fideicomiso"],
+    "seguros":            ["seguro", "póliza", "aseguradora", "reaseguro"],
+    "cheques":            ["cheque", "cámara compensadora", "compensación de cheques"],
+    "disolucion_entidades": ["disolución", "liquidación", "intervención bancaria"],
+    "asesoria_financiera": ["asesoría financiera", "asesor financiero", "agente de bolsa"],
+    "seguro_depositos":   ["fondo de garantía", "seguro de depósitos", "garantía de depósitos"],
+    # Telecom
+    "espectro":           ["espectro", "frecuencia", "banda de frecuencia",
+                           "espectro radioeléctrico", "interferencia"],
+    "concesiones":        ["concesión", "licencia", "autorización", "habilitación",
+                           "permiso de operación"],
+    "internet":           ["internet", "banda ancha", "acceso a internet", "isp",
+                           "fibra óptica", "datos móviles"],
+    "telefonia":          ["telefonía", "celular", "móvil", "red móvil", "portabilidad"],
+    "radiodifusion":      ["televisión", "radio", "radiodifusión", "señal de tv", "cable"],
+    "tarifas":            ["tarifa", "precio del servicio", "cargo de acceso"],
+    "interconexion":      ["interconexión", "acceso a red", "interconnect"],
+}
+
+# Palabras que indican industria
+BANCA_SIGNALS    = ["banco", "financiera", "bcp", "superintendencia de bancos",
+                    "entidad financiera", "sipap", "spi", "transferencia bancaria",
+                    "cuenta", "depósito", "crédito", "tarjeta", "atm", "cajero"]
+TELECOM_SIGNALS  = ["conatel", "telecom", "telecomunicaciones", "internet", "celular",
+                    "móvil", "señal", "espectro", "frecuencia", "televisión", "radio",
+                    "fibra óptica", "isp"]
+
+
+def classify_keywords(requirement: str) -> "Classification":
+    """Clasificador determinístico por keywords. No requiere API."""
+    text = requirement.lower()
+
+    # 1. Detectar industria
+    banca_score   = sum(1 for kw in BANCA_SIGNALS   if kw in text)
+    telecom_score = sum(1 for kw in TELECOM_SIGNALS  if kw in text)
+
+    if banca_score > telecom_score:
+        industry = "banca"
+    elif telecom_score > banca_score:
+        industry = "telecomunicaciones"
+    elif banca_score > 0 and telecom_score > 0:
+        industry = "ambas"
+    else:
+        # fallback: si menciona montos/pagos/usuarios → banca
+        if re.search(r'\b(monto|pago|cuenta|usuario|cliente)\b', text):
+            industry = "banca"
+        else:
+            industry = "ninguna"
+
+    # 2. Detectar topics
+    topics = []
+    for topic, keywords in KEYWORD_MAP.items():
+        if any(kw in text for kw in keywords):
+            # Filtrar topics coherentes con la industria detectada
+            if industry == "banca" and topic in TOPICS_BANCA:
+                topics.append(topic)
+            elif industry == "telecomunicaciones" and topic in TOPICS_TELECOM:
+                topics.append(topic)
+            elif industry == "ambas":
+                topics.append(topic)
+            elif industry == "ninguna":
+                topics.append(topic)
+
+    # 3. Agregar AML automáticamente si hay montos grandes (>500K guaraníes = umbral UIF)
+    if re.search(r'\b(\d[\d.,]*)\s*(millones?|mm|m)\b', text, re.I):
+        if "aml" not in topics and industry in ("banca", "ambas"):
+            topics.append("aml")
+
+    # 4. Descripción del producto (heurística simple)
+    product = _extract_product(requirement)
+
+    # 5. Search query: el requerimiento original + términos regulatorios clave
+    topic_terms = " ".join(t.replace("_", " ") for t in topics[:4])
+    search_query = f"{requirement}. Regulación {industry}: {topic_terms}."
+
+    return Classification(
+        industry=industry,
+        topics=topics,
+        product_description=product,
+        search_query=search_query,
+        confidence="media",
+    )
+
+
+def _extract_product(text: str) -> str:
+    """Extrae una descripción corta del producto del requerimiento."""
+    # Buscar patrones comunes
+    patterns = [
+        r'módulo\s+de\s+[\w\s]+',
+        r'sistema\s+de\s+[\w\s]+',
+        r'funcionalidad\s+de\s+[\w\s]+',
+        r'servicio\s+de\s+[\w\s]+',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            return m.group(0)[:80].strip()
+    # fallback: primeras 60 chars
+    return text[:60].rstrip(".,;") + "..."
+
+
+# ── Prompts Claude (si disponible) ────────────────────────────────────────────
 
 CLASSIFIER_SYSTEM = f"""Sos un experto en regulaciones financieras y de telecomunicaciones de Paraguay.
-Tu tarea es analizar un requerimiento de software y determinar qué regulaciones aplican.
-
-INDUSTRIAS disponibles:
-- banca            → regulaciones BCP (Banco Central del Paraguay)
-- telecomunicaciones → regulaciones CONATEL
-
-TOPICS disponibles por industria:
-banca: {', '.join(TOPICS_BANCA)}
-telecomunicaciones: {', '.join(TOPICS_TELECOM)}
-
-Devolvé SIEMPRE un JSON válido con esta estructura exacta:
+Analizá el requerimiento y devolvé SOLO un JSON válido:
 {{
   "industry": "<banca|telecomunicaciones|ambas|ninguna>",
-  "topics": ["<topic1>", "<topic2>"],
-  "product_description": "<descripción breve del producto/módulo en 1 línea>",
-  "search_query": "<consulta optimizada para búsqueda semántica en 1-2 oraciones>",
+  "topics": ["<topic>"],
+  "product_description": "<descripción breve en 1 línea>",
+  "search_query": "<consulta regulatoria en 1-2 oraciones>",
   "confidence": "<alta|media|baja>"
 }}
 
-Reglas:
-- Usá SOLO topics de la lista. Si ninguno aplica, dejá topics=[].
-- search_query debe ser específica y en español, enfocada en el aspecto regulatorio.
-- Si es "ambas" industrias, listá topics de ambas.
-- Si es "ninguna", igual intentá un search_query útil.
-"""
+Topics banca: {', '.join(TOPICS_BANCA)}
+Topics telecom: {', '.join(TOPICS_TELECOM)}
+Usá SOLO topics de esas listas."""
 
-ANALYZER_SYSTEM = """Sos un especialista en compliance y regulaciones de Paraguay (BCP y CONATEL).
-Tu función es analizar un requerimiento de software e identificar qué regulaciones deben
-contemplarse en el diseño y los casos de prueba.
+ANALYZER_SYSTEM = """Sos un especialista en compliance regulatorio de Paraguay (BCP y CONATEL).
+Analizá el requerimiento e identificá qué regulaciones aplican.
 
-Al responder:
-1. Identificá las obligaciones regulatorias que aplican directamente al requerimiento.
-2. Señalá los artículos, resoluciones o circulares específicas más relevantes.
-3. Listá los aspectos concretos que los casos de prueba DEBEN verificar por cumplimiento.
-4. Indicá si hay algún gap regulatorio (requerimiento no cubierto por las normas encontradas).
-5. Citá siempre la fuente (título + URL) para cada punto.
+Estructura tu respuesta así:
 
-Respondé en español. Sé preciso y accionable — el equipo QA usará esto para escribir test cases.
-"""
+## Regulaciones aplicables
+[Lista las normas directamente relevantes con número y tema]
+
+## Obligaciones que el sistema debe cumplir
+[Puntos concretos derivados de las normas — qué debe hacer o no hacer el sistema]
+
+## Checklist QA — qué deben verificar los casos de prueba
+[Lista numerada de verificaciones concretas para el equipo de testing]
+
+## Gaps / Riesgos regulatorios
+[Si algún aspecto del requerimiento no está cubierto por las normas encontradas]
+
+Citá siempre la fuente (título + URL). Respondé en español."""
 
 
 # ── Clientes ───────────────────────────────────────────────────────────────────
 
-def get_clients():
-    import anthropic
+def get_voyage():
     import voyageai
+    return voyageai.Client(api_key=VOYAGE_API_KEY)
+
+def get_supabase():
     from supabase import create_client
-    sb     = create_client(SUPABASE_URL, SUPABASE_KEY)
-    voyage = voyageai.Client(api_key=VOYAGE_API_KEY)
-    claude = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-    return sb, voyage, claude
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def get_claude():
+    if not HAS_CLAUDE:
+        return None
+    import anthropic
+    return anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
 
-# ── Paso 1: Clasificación ──────────────────────────────────────────────────────
+# ── Dataclasses ────────────────────────────────────────────────────────────────
 
 @dataclass
 class Classification:
-    industry: str                  # banca | telecomunicaciones | ambas | ninguna
+    industry: str
     topics: list[str]
     product_description: str
     search_query: str
     confidence: str
 
 
-def classify_requirement(claude, requirement: str,
-                          industry_override: Optional[str] = None,
-                          topics_override: Optional[list[str]] = None) -> Classification:
-    """Usa Claude Haiku para clasificar el requerimiento."""
+@dataclass
+class AnalysisResult:
+    requirement: str
+    classification: Classification
+    analysis: str
+    sources: list[dict] = field(default_factory=list)
+    chunks_used: int = 0
+    mode: str = "chunks"   # "chunks" | "claude"
 
-    # Si el usuario pasó overrides, saltar el LLM
+
+# ── Paso 1: Clasificación ──────────────────────────────────────────────────────
+
+def classify_requirement(
+    requirement: str,
+    industry_override: Optional[str] = None,
+    topics_override: Optional[list[str]] = None,
+) -> Classification:
+
     if industry_override and topics_override:
         return Classification(
             industry=industry_override,
@@ -153,38 +312,35 @@ def classify_requirement(claude, requirement: str,
             confidence="alta",
         )
 
-    log.info("Clasificando requerimiento...")
-    response = claude.messages.create(
-        model=CLAUDE_CLASSIFIER,
-        max_tokens=512,
-        system=CLASSIFIER_SYSTEM,
-        messages=[{
-            "role": "user",
-            "content": f"Requerimiento a clasificar:\n\n{requirement}",
-        }],
-    )
+    if HAS_CLAUDE:
+        log.info("Clasificando con Claude Haiku...")
+        claude = get_claude()
+        response = claude.messages.create(
+            model=CLAUDE_CLASSIFIER,
+            max_tokens=512,
+            system=CLASSIFIER_SYSTEM,
+            messages=[{"role": "user", "content": f"Requerimiento:\n\n{requirement}"}],
+        )
+        raw = response.content[0].text.strip()
+        start, end = raw.find("{"), raw.rfind("}") + 1
+        data = json.loads(raw[start:end])
+        cls = Classification(
+            industry=data.get("industry", "ninguna"),
+            topics=[t for t in data.get("topics", []) if t in ALL_TOPICS],
+            product_description=data.get("product_description", ""),
+            search_query=data.get("search_query", requirement),
+            confidence=data.get("confidence", "media"),
+        )
+    else:
+        log.info("Clasificando con reglas de keywords (sin API)...")
+        cls = classify_keywords(requirement)
 
-    raw = response.content[0].text.strip()
-    # Extraer JSON aunque venga con texto alrededor
-    start = raw.find("{")
-    end   = raw.rfind("}") + 1
-    data  = json.loads(raw[start:end])
-
-    cls = Classification(
-        industry=data.get("industry", "ninguna"),
-        topics=[t for t in data.get("topics", []) if t in ALL_TOPICS],
-        product_description=data.get("product_description", ""),
-        search_query=data.get("search_query", requirement),
-        confidence=data.get("confidence", "media"),
-    )
-
-    log.info(f"  industry={cls.industry} | topics={cls.topics} | conf={cls.confidence}")
+    log.info(f"  industry={cls.industry} | topics={cls.topics}")
     log.info(f"  producto: {cls.product_description}")
-    log.info(f"  search_query: {cls.search_query}")
     return cls
 
 
-# ── Paso 2: Búsqueda semántica filtrada ────────────────────────────────────────
+# ── Paso 2: Embed + búsqueda vectorial ────────────────────────────────────────
 
 def embed_query(voyage, text: str) -> list[float]:
     result = voyage.embed([text], model=VOYAGE_MODEL, input_type="query")
@@ -193,18 +349,9 @@ def embed_query(voyage, text: str) -> list[float]:
 
 def search_regulations(sb, query_vec: list[float], cls: Classification,
                         top_k: int, threshold: float) -> list[dict]:
-    """Búsqueda vectorial filtrada por industry + topics."""
 
-    # Determinar filtros
-    filter_industry = None
-    filter_topics   = None
-
-    if cls.industry in ("banca", "telecomunicaciones"):
-        filter_industry = cls.industry
-    # "ambas" → sin filtro de industria (busca en todo el corpus)
-
-    if cls.topics:
-        filter_topics = cls.topics
+    filter_industry = cls.industry if cls.industry in ("banca", "telecomunicaciones") else None
+    filter_topics   = cls.topics if cls.topics else None
 
     params = {
         "query_embedding": query_vec,
@@ -216,29 +363,27 @@ def search_regulations(sb, query_vec: list[float], cls: Classification,
     if filter_topics:
         params["filter_topics"] = filter_topics
 
-    log.info(f"Buscando chunks (industry={filter_industry}, topics={filter_topics}, top_k={top_k})...")
+    log.info(f"Buscando (industry={filter_industry}, topics={filter_topics}, top_k={top_k})...")
     try:
-        res = sb.rpc("match_rag_chunks_v2", params).execute()
-        chunks = res.data or []
+        chunks = sb.rpc("match_rag_chunks_v2", params).execute().data or []
     except Exception as e:
-        log.error(f"Error búsqueda vectorial: {e}")
-        chunks = []
+        log.error(f"Error RPC: {e}")
+        return []
 
-    # Si con topics no hay resultados suficientes, ampliar sin topics
+    # Fallback sin filtro de topics si hay pocos resultados
     if len(chunks) < 3 and filter_topics:
-        log.info(f"  Solo {len(chunks)} resultados con topics, ampliando sin filtro de topics...")
+        log.info(f"  {len(chunks)} resultados, ampliando sin filtro topics...")
         params_wide = {k: v for k, v in params.items() if k != "filter_topics"}
         try:
-            res2 = sb.rpc("match_rag_chunks_v2", params_wide).execute()
-            chunks = res2.data or []
+            chunks = sb.rpc("match_rag_chunks_v2", params_wide).execute().data or []
         except Exception:
             pass
 
-    log.info(f"  {len(chunks)} chunks recuperados")
+    log.info(f"  {len(chunks)} chunks encontrados")
     return chunks
 
 
-# ── Paso 3: Construcción del contexto ──────────────────────────────────────────
+# ── Paso 3: Análisis ──────────────────────────────────────────────────────────
 
 def build_context(chunks: list[dict]) -> str:
     parts = []
@@ -247,36 +392,32 @@ def build_context(chunks: list[dict]) -> str:
         category  = c.get("doc_category", "")
         url       = c.get("doc_url", "")
         sim       = c.get("similarity", 0)
-        published = c.get("doc_published", "")
+        published = c.get("doc_published", "") or ""
         topics    = c.get("doc_topics") or []
         content   = c.get("content", "")
-
         parts.append(
-            f"[FRAGMENTO {i}] — similitud {sim:.0%}\n"
+            f"[FRAGMENTO {i}] — {sim:.0%} similitud\n"
             f"Fuente    : {title}\n"
-            f"Categoría : {category}  |  Publicado: {published}\n"
-            f"Temas     : {', '.join(topics) if topics else '—'}\n"
+            f"Categoría : {category}  |  Fecha: {published}\n"
+            f"Temas     : {', '.join(topics[:5]) if topics else '—'}\n"
             f"URL       : {url}\n"
-            f"{'─'*40}\n"
+            f"{'─'*50}\n"
             f"{content}\n"
         )
     return "\n\n".join(parts)
 
 
-# ── Paso 4: Análisis regulatorio ───────────────────────────────────────────────
-
-def analyze(claude, requirement: str, cls: Classification, context: str) -> str:
+def analyze_with_claude(claude, requirement: str, cls: Classification,
+                         context: str) -> str:
     user_msg = (
-        f"REQUERIMIENTO A ANALIZAR:\n{requirement}\n\n"
-        f"PRODUCTO/MÓDULO IDENTIFICADO:\n{cls.product_description}\n\n"
-        f"INDUSTRIA: {cls.industry}  |  TEMAS REGULATORIOS: {', '.join(cls.topics) or '—'}\n\n"
+        f"REQUERIMIENTO:\n{requirement}\n\n"
+        f"PRODUCTO: {cls.product_description}\n"
+        f"INDUSTRIA: {cls.industry}  |  TEMAS: {', '.join(cls.topics) or '—'}\n\n"
         f"{'='*60}\n"
-        f"FRAGMENTOS DE REGULACIONES APLICABLES:\n\n"
-        f"{context}\n\n"
+        f"REGULACIONES ENCONTRADAS:\n\n{context}\n"
         f"{'='*60}\n\n"
-        f"Analizá qué regulaciones aplican a este requerimiento y qué debe verificar el equipo QA."
+        f"Analizá qué regulaciones aplican y generá el checklist QA."
     )
-
     response = claude.messages.create(
         model=CLAUDE_ANALYZER,
         max_tokens=3000,
@@ -286,15 +427,45 @@ def analyze(claude, requirement: str, cls: Classification, context: str) -> str:
     return response.content[0].text
 
 
-# ── Resultado ──────────────────────────────────────────────────────────────────
+def format_chunks_as_analysis(requirement: str, cls: Classification,
+                                chunks: list[dict]) -> str:
+    """Formatea los chunks como análisis estructurado (sin LLM)."""
+    lines = []
+    lines.append("## Regulaciones encontradas\n")
 
-@dataclass
-class AnalysisResult:
-    requirement: str
-    classification: Classification
-    analysis: str
-    sources: list[dict] = field(default_factory=list)
-    chunks_used: int = 0
+    seen_docs: dict[str, dict] = {}
+    for c in chunks:
+        url = c.get("doc_url", "")
+        if url not in seen_docs:
+            seen_docs[url] = c
+
+    for c in seen_docs.values():
+        title     = c.get("doc_title", "Sin título")
+        category  = c.get("doc_category", "")
+        published = c.get("doc_published", "") or ""
+        url       = c.get("doc_url", "")
+        sim       = c.get("similarity", 0)
+        lines.append(f"- **[{category.upper()}]** {title} ({sim:.0%})")
+        if published:
+            lines.append(f"  Fecha: {published}")
+        lines.append(f"  URL: {url}")
+
+    lines.append("\n## Fragmentos regulatorios relevantes\n")
+    for i, c in enumerate(chunks, 1):
+        title   = c.get("doc_title", "")
+        sim     = c.get("similarity", 0)
+        content = c.get("content", "")
+        # Mostrar sólo los primeros 600 chars de cada chunk
+        snippet = content[:600].rsplit(" ", 1)[0] + "..." if len(content) > 600 else content
+        lines.append(f"### [{i}] {title} — {sim:.0%}")
+        lines.append(snippet)
+        lines.append("")
+
+    lines.append("\n---")
+    lines.append(f"_Análisis automático basado en búsqueda semántica._")
+    lines.append(f"_Para análisis narrativo completo, configurá ANTHROPIC_API_KEY._")
+
+    return "\n".join(lines)
 
 
 # ── Función principal ──────────────────────────────────────────────────────────
@@ -306,37 +477,25 @@ def analyze_requirement(
     industry_override: Optional[str] = None,
     topics_override: Optional[list[str]] = None,
 ) -> AnalysisResult:
-    """
-    Analiza un requerimiento y retorna las regulaciones aplicables.
 
-    Args:
-        requirement      : descripción del requerimiento/feature en texto libre
-        top_k            : máximo de chunks a recuperar
-        threshold        : similitud coseno mínima (0-1)
-        industry_override: forzar industria sin clasificación automática
-        topics_override  : forzar topics sin clasificación automática
-
-    Returns:
-        AnalysisResult con clasificación, análisis y fuentes
-    """
-    sb, voyage, claude = get_clients()
+    voyage = get_voyage()
+    sb     = get_supabase()
+    claude = get_claude()
 
     # 1. Clasificar
-    cls = classify_requirement(claude, requirement, industry_override, topics_override)
+    cls = classify_requirement(requirement, industry_override, topics_override)
 
     if cls.industry == "ninguna":
         return AnalysisResult(
             requirement=requirement,
             classification=cls,
-            analysis=(
-                "No se identificó industria regulatoria aplicable para este requerimiento. "
-                "Revisá si corresponde a banca (BCP) o telecomunicaciones (CONATEL)."
-            ),
+            analysis="No se identificó industria regulatoria. ¿Es banca (BCP) o telecomunicaciones (CONATEL)?",
+            mode="chunks",
         )
 
-    # 2. Embed + búsqueda
-    log.info("Generando embedding...")
-    q_vec = embed_query(voyage, cls.search_query)
+    # 2. Embed + buscar
+    log.info("Generando embedding del requerimiento...")
+    q_vec  = embed_query(voyage, cls.search_query)
     chunks = search_regulations(sb, q_vec, cls, top_k, threshold)
 
     if not chunks:
@@ -344,20 +503,25 @@ def analyze_requirement(
             requirement=requirement,
             classification=cls,
             analysis=(
-                f"No se encontraron regulaciones relevantes para los topics: {cls.topics}. "
-                "Puede que aún no estén embedadas o que el requerimiento sea muy específico. "
-                "Intentá ampliar los topics o reducir el threshold."
+                f"No se encontraron regulaciones para industry={cls.industry}, "
+                f"topics={cls.topics}. Probá con --threshold 0.30 o ampliá los topics."
             ),
+            mode="chunks",
         )
 
-    # 3. Contexto
+    # 3. Análisis
     context = build_context(chunks)
 
-    # 4. Análisis
-    log.info("Generando análisis regulatorio...")
-    analysis_text = analyze(claude, requirement, cls, context)
+    if claude:
+        log.info("Generando análisis con Claude Sonnet...")
+        analysis = analyze_with_claude(claude, requirement, cls, context)
+        mode = "claude"
+    else:
+        log.info("Formateando regulaciones encontradas (modo sin API)...")
+        analysis = format_chunks_as_analysis(requirement, cls, chunks)
+        mode = "chunks"
 
-    # 5. Fuentes únicas ordenadas por similitud
+    # 4. Fuentes únicas
     seen: set[str] = set()
     sources = []
     for c in chunks:
@@ -365,50 +529,56 @@ def analyze_requirement(
         if url not in seen:
             seen.add(url)
             sources.append({
-                "title":     c.get("doc_title", ""),
-                "url":       url,
-                "category":  c.get("doc_category", ""),
-                "published": c.get("doc_published", ""),
-                "topics":    c.get("doc_topics") or [],
+                "title":      c.get("doc_title", ""),
+                "url":        url,
+                "category":   c.get("doc_category", ""),
+                "published":  c.get("doc_published", ""),
+                "topics":     c.get("doc_topics") or [],
                 "similarity": round(c.get("similarity", 0), 4),
             })
 
     return AnalysisResult(
         requirement=requirement,
         classification=cls,
-        analysis=analysis_text,
+        analysis=analysis,
         sources=sources,
         chunks_used=len(chunks),
+        mode=mode,
     )
 
 
 # ── Salida formateada ──────────────────────────────────────────────────────────
 
 def print_result(result: AnalysisResult):
-    cls = result.classification
+    cls  = result.classification
+    mode = "🤖 Claude Sonnet" if result.mode == "claude" else "🔍 Búsqueda semántica"
+
     print(f"\n{'═'*70}")
     print(f"📋 REQUERIMIENTO")
     print(f"{'─'*70}")
     print(result.requirement)
+
     print(f"\n{'─'*70}")
-    print(f"🏷️  CLASIFICACIÓN AUTOMÁTICA")
+    print(f"🏷️  CLASIFICACIÓN  (confianza: {cls.confidence})")
     print(f"{'─'*70}")
-    print(f"  Industria : {cls.industry}  (confianza: {cls.confidence})")
+    print(f"  Industria : {cls.industry}")
     print(f"  Producto  : {cls.product_description}")
     print(f"  Topics    : {', '.join(cls.topics) if cls.topics else '—'}")
+
     print(f"\n{'─'*70}")
-    print(f"⚖️  ANÁLISIS REGULATORIO  ({result.chunks_used} fragmentos consultados)")
+    print(f"⚖️  ANÁLISIS  [{mode}]  —  {result.chunks_used} fragmentos")
     print(f"{'─'*70}")
     print(result.analysis)
 
     if result.sources:
         print(f"\n{'─'*70}")
-        print(f"📚 FUENTES REGULATORIAS")
+        print(f"📚 FUENTES  ({len(result.sources)} documentos)")
         print(f"{'─'*70}")
         for s in result.sources:
-            topics_str = f"  [{', '.join(s['topics'][:3])}]" if s['topics'] else ""
-            print(f"  {s['similarity']:.0%}  {s['title']}{topics_str}")
+            t_str = f"  [{', '.join(s['topics'][:3])}]" if s['topics'] else ""
+            print(f"  {s['similarity']:.0%}  [{s['category']}] {s['title']}{t_str}")
             print(f"       {s['url']}")
+
     print(f"{'═'*70}\n")
 
 
@@ -417,10 +587,9 @@ def print_result(result: AnalysisResult):
 def interactive_cli():
     print("═" * 70)
     print("  RAG Analyzer — Regulaciones BCP / CONATEL Paraguay")
-    print("  Escribí un requerimiento para ver qué regulaciones aplican.")
-    print("  'salir' para terminar.")
+    print(f"  Modo: {'Claude Sonnet (análisis narrativo)' if HAS_CLAUDE else 'Búsqueda semántica (sin API key)'}")
+    print("  Ingresá un requerimiento. 'salir' para terminar.")
     print("═" * 70)
-
     while True:
         print()
         try:
@@ -431,7 +600,6 @@ def interactive_cli():
             continue
         if req.lower() in ("salir", "exit", "quit"):
             break
-
         try:
             result = analyze_requirement(req)
             print_result(result)
@@ -441,20 +609,17 @@ def interactive_cli():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Analiza requerimientos y busca regulaciones BCP/CONATEL aplicables"
+        description="Analiza requerimientos → regulaciones BCP/CONATEL aplicables"
     )
     parser.add_argument("requirement", nargs="?",
-                        help="Requerimiento a analizar (si se omite, modo interactivo)")
-    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K,
-                        help=f"Chunks a recuperar (default: {DEFAULT_TOP_K})")
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
-                        help=f"Similitud mínima 0-1 (default: {DEFAULT_THRESHOLD})")
-    parser.add_argument("--industry", choices=["banca", "telecomunicaciones", "ambas"],
-                        help="Forzar industria sin clasificación automática")
-    parser.add_argument("--topics", type=str,
-                        help="Forzar topics separados por coma, ej: transferencias,riesgo")
-    parser.add_argument("--json", action="store_true",
-                        help="Salida en JSON (útil para integración con otras herramientas)")
+                        help="Requerimiento a analizar (omitir = modo interactivo)")
+    parser.add_argument("--top-k",     type=int,   default=DEFAULT_TOP_K)
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument("--industry",  choices=["banca", "telecomunicaciones", "ambas"])
+    parser.add_argument("--topics",    type=str,
+                        help="Topics forzados, separados por coma: transferencias,riesgo")
+    parser.add_argument("--json",      action="store_true",
+                        help="Salida en JSON (para integración con otras herramientas)")
     args = parser.parse_args()
 
     topics_list = [t.strip() for t in args.topics.split(",")] if args.topics else None
@@ -468,16 +633,16 @@ if __name__ == "__main__":
             topics_override=topics_list,
         )
         if args.json:
-            import dataclasses
             print(json.dumps({
-                "requirement":   result.requirement,
-                "industry":      result.classification.industry,
-                "topics":        result.classification.topics,
-                "product":       result.classification.product_description,
-                "confidence":    result.classification.confidence,
-                "analysis":      result.analysis,
-                "chunks_used":   result.chunks_used,
-                "sources":       result.sources,
+                "requirement": result.requirement,
+                "industry":    result.classification.industry,
+                "topics":      result.classification.topics,
+                "product":     result.classification.product_description,
+                "confidence":  result.classification.confidence,
+                "analysis":    result.analysis,
+                "chunks_used": result.chunks_used,
+                "mode":        result.mode,
+                "sources":     result.sources,
             }, ensure_ascii=False, indent=2))
         else:
             print_result(result)

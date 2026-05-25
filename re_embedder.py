@@ -43,9 +43,12 @@ log = logging.getLogger(__name__)
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
-VOYAGE_MODEL  = "voyage-3"
-EMBED_DELAY   = 22.0  # segundos entre lotes (free tier: 3 RPM = 1 req/20s)
-PAGE_SIZE     = 50    # chunks por consulta paginada
+VOYAGE_MODEL    = "voyage-3"
+EMBED_DELAY     = 0.5    # segundos entre lotes (paid tier: 300 RPM)
+RATE_LIMIT_WAIT = 65.0   # espera tras error de rate limit (>60s para limpiar ventana)
+MAX_RETRIES     = 3      # reintentos por lote ante rate limit
+PAGE_SIZE       = 500    # chunks por consulta paginada
+DOC_ID_BATCH    = 200    # max doc_ids per .in_() call (Supabase URL length limit ~8KB)
 
 # ── Clientes ───────────────────────────────────────────────────────────────────
 
@@ -78,35 +81,25 @@ def get_doc_ids(sb: Client,
                 source: Optional[str],
                 category: Optional[str],
                 year: Optional[int]) -> list[str]:
-    """Build list of doc_ids matching filters."""
-    q = sb.table("rag_documents").select("id")
-    if source:
-        q = q.eq("source", source)
-    if category:
-        q = q.eq("category", category)
-    # Paginate — recreate query each page to avoid param accumulation
+    """Build list of doc_ids matching filters.
+
+    Year filter uses published column (primary) — far more reliable than
+    text-matching URLs/titles, since many BCP docs use 2-digit years like
+    'fecha 10.04.25' and never contain '2025' in url/filename.
+    """
     all_ids = []
     offset = 0
     while True:
-        res = sb.table("rag_documents").select("id,title,url,filename") \
-            .eq("source", source) if source else sb.table("rag_documents").select("id,title,url,filename")
-        # rebuild cleanly
-        res = sb.table("rag_documents").select("id,title,url,filename")
+        res = sb.table("rag_documents").select("id")
         if source:
             res = res.eq("source", source)
         if category:
             res = res.eq("category", category)
+        if year:
+            res = res.gte("published", f"{year}-01-01").lt("published", f"{year + 1}-01-01")
         rows = res.range(offset, offset + 999).execute().data or []
         if not rows:
             break
-        if year:
-            y = str(year)
-            rows = [r for r in rows if (
-                f".{y}" in (r.get("title") or "")
-                or y in (r.get("filename") or "")
-                or f"/{y}/" in (r.get("url") or "")
-                or (r.get("url") or "").endswith(f"-{y}.pdf")
-            )]
         all_ids.extend(r["id"] for r in rows)
         if len(rows) < 1000:
             break
@@ -116,26 +109,42 @@ def get_doc_ids(sb: Client,
 
 def fetch_pending_chunks(sb: Client,
                          doc_ids: list[str],
-                         page_size: int,
-                         offset: int) -> list[dict]:
-    """Devuelve chunks con embedding NULL para los doc_ids dados."""
+                         page_size: int) -> list[dict]:
+    """Devuelve hasta page_size chunks con embedding NULL para los doc_ids dados.
+
+    Batches doc_ids in groups of DOC_ID_BATCH to avoid Supabase URL length limits.
+    Always call with the full doc_ids list — embedded rows drop from IS NULL set,
+    so re-querying from scratch each iteration naturally pages forward.
+    """
     if not doc_ids:
         return []
-    res = (
-        sb.table("rag_chunks")
-        .select("id, content, document_id")
-        .is_("embedding", "null")
-        .in_("document_id", doc_ids)
-        .range(offset, offset + page_size - 1)
-        .execute()
-    )
-    return res.data or []
+    all_chunks: list[dict] = []
+    for i in range(0, len(doc_ids), DOC_ID_BATCH):
+        batch = doc_ids[i : i + DOC_ID_BATCH]
+        res = (
+            sb.table("rag_chunks")
+            .select("id, content, document_id")
+            .is_("embedding", "null")
+            .in_("document_id", batch)
+            .limit(page_size - len(all_chunks))
+            .execute()
+        )
+        all_chunks.extend(res.data or [])
+        if len(all_chunks) >= page_size:
+            break
+    return all_chunks
+
+
+def _is_rate_limit(err: Exception) -> bool:
+    s = str(err).lower()
+    return "rate" in s or "429" in s or "rpm" in s or "tpm" in s
 
 
 def embed_and_update(sb: Client, voyage, chunks: list[dict],
                      batch_size: int) -> tuple[int, int]:
     """
     Genera embeddings para `chunks` y actualiza rag_chunks.
+    Reintentos automáticos ante rate limit (hasta MAX_RETRIES veces).
     Retorna (ok_count, fail_count).
     """
     ok = fail = 0
@@ -147,26 +156,48 @@ def embed_and_update(sb: Client, voyage, chunks: list[dict],
         batch_num    = i // batch_size + 1
         log.info(f"  Embedding lote {batch_num} ({len(batch_texts)} chunks)...")
 
-        try:
-            result = voyage.embed(batch_texts, model=VOYAGE_MODEL, input_type="document")
-            embeddings = result.embeddings
-        except Exception as e:
-            log.error(f"  Error embedding lote {batch_num}: {e}")
-            fail += len(batch_chunks)
-            time.sleep(EMBED_DELAY * 2)
+        embeddings = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                result = voyage.embed(batch_texts, model=VOYAGE_MODEL, input_type="document")
+                embeddings = result.embeddings
+                break
+            except Exception as e:
+                if _is_rate_limit(e) and attempt < MAX_RETRIES - 1:
+                    wait = RATE_LIMIT_WAIT * (attempt + 1)
+                    log.warning(f"  Rate limit lote {batch_num} (intento {attempt+1}), "
+                                f"esperando {wait:.0f}s...")
+                    time.sleep(wait)
+                else:
+                    log.error(f"  Error embedding lote {batch_num}: {e}")
+                    fail += len(batch_chunks)
+                    break
+
+        if embeddings is None:
             continue
 
-        # Update uno a uno (SDK no soporta bulk update con valores distintos)
-        for chunk, emb in zip(batch_chunks, embeddings):
-            try:
-                sb.table("rag_chunks") \
-                  .update({"embedding": emb}) \
-                  .eq("id", chunk["id"]) \
-                  .execute()
-                ok += 1
-            except Exception as e:
-                log.error(f"  Error update chunk {chunk['id']}: {e}")
-                fail += 1
+        # Bulk update — un solo RPC en lugar de N PATCHes individuales
+        try:
+            import json as _json
+            updates = [
+                {"id": chunk["id"], "embedding": f"[{','.join(str(x) for x in emb)}]"}
+                for chunk, emb in zip(batch_chunks, embeddings)
+            ]
+            sb.rpc("bulk_update_embeddings", {"updates": updates}).execute()
+            ok += len(batch_chunks)
+        except Exception as e:
+            log.error(f"  Error bulk update lote {batch_num}: {e}")
+            # Fallback: update uno a uno
+            for chunk, emb in zip(batch_chunks, embeddings):
+                try:
+                    sb.table("rag_chunks") \
+                      .update({"embedding": emb}) \
+                      .eq("id", chunk["id"]) \
+                      .execute()
+                    ok += 1
+                except Exception as e2:
+                    log.error(f"  Error update chunk {chunk['id']}: {e2}")
+                    fail += 1
 
         time.sleep(EMBED_DELAY)
 
@@ -197,36 +228,49 @@ def run_re_embedder(
         return
 
     if dry_run:
-        chunk_res = (
-            sb.table("rag_chunks")
-            .select("id", count="exact")
-            .is_("embedding", "null")
-            .in_("document_id", doc_ids)
-            .execute()
-        )
-        log.info(f"  Chunks sin embedding: {chunk_res.count or 0:,}")
+        # Batch doc_ids to avoid Supabase URL length limits
+        total_pending = 0
+        for i in range(0, len(doc_ids), DOC_ID_BATCH):
+            batch = doc_ids[i : i + DOC_ID_BATCH]
+            res = (
+                sb.table("rag_chunks")
+                .select("id", count="exact")
+                .is_("embedding", "null")
+                .in_("document_id", batch)
+                .execute()
+            )
+            total_pending += res.count or 0
+        log.info(f"  Chunks sin embedding: {total_pending:,}")
         return
 
     voyage = get_voyage()
     total_ok = total_fail = total_processed = 0
-    offset = 0
+    consecutive_zero_ok = 0
 
     while True:
-        chunks = fetch_pending_chunks(sb, doc_ids, PAGE_SIZE, offset)
+        chunks = fetch_pending_chunks(sb, doc_ids, PAGE_SIZE)
         if not chunks:
             break
 
-        log.info(f"Página offset={offset}: {len(chunks)} chunks pendientes")
+        log.info(f"  {len(chunks)} chunks pendientes en esta pasada")
         ok, fail = embed_and_update(sb, voyage, chunks, batch_size)
         total_ok   += ok
         total_fail += fail
         total_processed += len(chunks)
 
+        if ok == 0:
+            consecutive_zero_ok += 1
+            if consecutive_zero_ok >= 3:
+                log.error("  3 pasadas consecutivas sin progreso — abortando para evitar loop.")
+                break
+        else:
+            consecutive_zero_ok = 0
+
         if fail > 0:
-            log.warning(f"  {fail} fallos en esta página; abortando.")
-            break
-        # Don't advance offset: embedded chunks disappear from NULL set,
-        # so always re-query from offset=0 until no chunks remain.
+            log.warning(f"  {fail} fallos en esta pasada; reintentando en siguiente ciclo.")
+            # No break: failed chunks still have NULL embedding → re-fetched next iteration.
+        # Don't advance offset: embedded chunks disappear from IS NULL set,
+        # so re-querying from scratch naturally moves to the next batch.
 
     log.info("\n=== Re-embedding completo ===")
     log.info(f"  ✓ Actualizados : {total_ok}")
@@ -243,9 +287,9 @@ if __name__ == "__main__":
                                  "norma_prudencial", "ley", "decreto"],
                         help="Filtrar por categoría")
     parser.add_argument("--year", type=int,
-                        help="Filtrar por año (ej: 2026) — busca en título, filename, url")
-    parser.add_argument("--batch-size", type=int, default=8,
-                        help="Chunks por lote Voyage AI (default: 8; reducir si hay rate limits)")
+                        help="Filtrar por año (ej: 2025) — filtra por columna published")
+    parser.add_argument("--batch-size", type=int, default=128,
+                        help="Chunks por lote Voyage AI (default: 128; max permitido por API)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Solo contar chunks pendientes, no generar embeddings")
     args = parser.parse_args()
