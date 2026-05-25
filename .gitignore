@@ -13,6 +13,9 @@ build/
 .venv/
 venv/
 
+# Downloads (PDFs ~1 GB — too large for git)
+downloads/
+
 # Logs
 logs/
 *.log

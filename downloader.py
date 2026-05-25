@@ -112,6 +112,9 @@ def safe_filename(url: str, title: str, filename: str) -> str:
     return slug + ".pdf" if slug else "documento.pdf"
 
 
+BCP_BASE_URL = "https://www.bcp.gov.py"
+
+
 def download_one(doc: dict) -> dict:
     """
     Descarga un PDF. Retorna dict con resultado.
@@ -119,6 +122,10 @@ def download_one(doc: dict) -> dict:
     """
     url      = doc["url"]
     source   = doc["source"]
+
+    # Fix relative BCP URLs stored in Supabase
+    if source == "bcp" and url.startswith("/"):
+        url = BCP_BASE_URL + url
     category = doc.get("category", "sin_categoria")
     title    = doc.get("title", "")
     filename = doc.get("filename", "")
