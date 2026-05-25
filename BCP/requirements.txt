@@ -1,0 +1,8 @@
+# BCP RAG — dependencias Python
+requests==2.32.3
+beautifulsoup4==4.12.3
+pdfplumber==0.11.4
+voyageai==0.3.2
+anthropic==0.40.0
+supabase==2.9.1
+python-dotenv==1.0.1
