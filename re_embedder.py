@@ -5,6 +5,7 @@ Uso:
   python re_embedder.py                      # todos los chunks sin embedding
   python re_embedder.py --source bcp         # solo BCP
   python re_embedder.py --source conatel     # solo CONATEL
+  python re_embedder.py --source seprelad    # solo SEPRELAD
   python re_embedder.py --batch-size 4       # lotes más pequeños (rate limits)
   python re_embedder.py --dry-run            # ver cuántos chunks quedan sin embed
 """
@@ -280,11 +281,15 @@ def run_re_embedder(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Re-embedder RAG — agrega embeddings faltantes")
-    parser.add_argument("--source", choices=["bcp", "conatel"],
+    parser.add_argument("--source", choices=[
+                        "bcp", "conatel", "seprelad", "sis", "mspbs",
+                        "dinavisa", "mic", "dnit", "mec"
+                    ],
                         help="Filtrar por fuente (default: todas)")
     parser.add_argument("--category",
                         choices=["resolucion", "circular", "reglamento",
-                                 "norma_prudencial", "ley", "decreto"],
+                                 "norma_prudencial", "ley", "decreto",
+                                 "guia", "comunicado"],
                         help="Filtrar por categoría")
     parser.add_argument("--year", type=int,
                         help="Filtrar por año (ej: 2025) — filtra por columna published")
