@@ -1,0 +1,112 @@
+{
+  "version": "1.0.0",
+  "focus": "qa_macro",
+  "excluded_sources": [
+    "bcp",
+    "conatel"
+  ],
+  "indexes": [
+    {
+      "id": "qa_core_index",
+      "description": "Fundamentos QA, ciclo de pruebas, tecnicas, gestion, defectos, metricas, automatizacion"
+    },
+    {
+      "id": "exam_index",
+      "description": "Preguntas y respuestas de examenes CTFL/ISTQB"
+    },
+    {
+      "id": "industry_index",
+      "description": "Casos y reglas QA por industria"
+    }
+  ],
+  "domains": [
+    "qa_core",
+    "fintech",
+    "seguros",
+    "salud",
+    "energia",
+    "retail",
+    "logistica",
+    "gobierno",
+    "educacion",
+    "agroindustria",
+    "manufactura",
+    "banca",
+    "telecomunicaciones"
+  ],
+  "topic_catalog": [
+    "fundamentos_testing",
+    "proceso_prueba",
+    "tecnicas_caja_negra",
+    "tecnicas_caja_blanca",
+    "tecnicas_experiencia",
+    "gestion_pruebas",
+    "defect_management",
+    "risk_based_testing",
+    "automatizacion",
+    "metricas_calidad",
+    "compliance",
+    "seguridad",
+    "accesibilidad",
+    "performance",
+    "integraciones"
+  ],
+  "source_types": [
+    "syllabus",
+    "exam_questions",
+    "exam_answers",
+    "regulation",
+    "guide",
+    "standard"
+  ],
+  "chunking": {
+    "strategy": "semantic_unit",
+    "target_chars": 900,
+    "overlap_chars": 120,
+    "units": [
+      "definition",
+      "rule",
+      "procedure",
+      "example",
+      "question_answer"
+    ]
+  },
+  "metadata_schema": {
+    "required": [
+      "domain",
+      "topic",
+      "source_type",
+      "lang",
+      "version",
+      "confidence_ocr"
+    ],
+    "optional": [
+      "industry_priority",
+      "published_at",
+      "doc_title",
+      "page_range",
+      "exam_model"
+    ]
+  },
+  "industry_priority_waves": {
+    "wave_1": [
+      "qa_core",
+      "fintech",
+      "seguros",
+      "salud",
+      "retail"
+    ],
+    "wave_2": [
+      "logistica",
+      "energia",
+      "manufactura",
+      "gobierno"
+    ],
+    "wave_3": [
+      "educacion",
+      "agroindustria",
+      "banca",
+      "telecomunicaciones"
+    ]
+  }
+}

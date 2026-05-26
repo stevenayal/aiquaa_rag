@@ -7,6 +7,24 @@ import { getAnalysis, getBddDownloadUrl, getTestPlanDownloadUrl } from '@/lib/ap
 import type { Analysis, BddScenario, TestPlan } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 
+const INDUSTRY_LABELS: Record<string, string> = {
+  qa: '🧪 QA',
+  fintech: '💳 Fintech',
+  seguros: '🛡️ Seguros',
+  salud: '🏥 Salud',
+  energia: '⚡ Energia',
+  retail: '🛒 Retail',
+  logistica: '🚚 Logistica',
+  gobierno: '🏛️ Gobierno',
+  educacion: '🎓 Educacion',
+  agroindustria: '🌾 Agroindustria',
+  manufactura: '🏭 Manufactura',
+  banca: '🏦 Banca',
+  telecomunicaciones: '📡 Telecom',
+  ambas: '🔀 Multi-industria',
+  ninguna: '❓Sin clasificar',
+}
+
 type Tab = 'analysis' | 'bdd' | 'testplan'
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -95,7 +113,7 @@ export default function AnalysisPage() {
           {cls && (
             <div className="flex flex-wrap gap-2 mt-3">
               <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-                {cls.industry === 'banca' ? '🏦 Banca' : '📡 Telecom'}
+                {INDUSTRY_LABELS[cls.industry] ?? cls.industry}
               </span>
               <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
                 Confianza: {cls.confidence}

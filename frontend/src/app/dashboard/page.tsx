@@ -9,8 +9,19 @@ import type { Project } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 
 const INDUSTRY_LABELS: Record<string, { label: string; color: string }> = {
+  qa:                 { label: '🧪 QA',                color: 'bg-emerald-100 text-emerald-800' },
+  fintech:            { label: '💳 Fintech',           color: 'bg-cyan-100 text-cyan-800' },
+  seguros:            { label: '🛡️ Seguros',          color: 'bg-sky-100 text-sky-800' },
+  salud:              { label: '🏥 Salud',             color: 'bg-rose-100 text-rose-800' },
+  energia:            { label: '⚡ Energia',           color: 'bg-amber-100 text-amber-800' },
+  retail:             { label: '🛒 Retail',            color: 'bg-orange-100 text-orange-800' },
+  logistica:          { label: '🚚 Logistica',         color: 'bg-lime-100 text-lime-800' },
+  gobierno:           { label: '🏛️ Gobierno',         color: 'bg-slate-100 text-slate-800' },
+  educacion:          { label: '🎓 Educacion',         color: 'bg-indigo-100 text-indigo-800' },
+  agroindustria:      { label: '🌾 Agroindustria',     color: 'bg-green-100 text-green-800' },
+  manufactura:        { label: '🏭 Manufactura',       color: 'bg-zinc-100 text-zinc-800' },
   banca:            { label: '🏦 Banca',            color: 'bg-blue-100 text-blue-800' },
-  telecomunicaciones: { label: '📡 Telecom',         color: 'bg-purple-100 text-purple-800' },
+  telecomunicaciones: { label: '📡 Telecom',         color: 'bg-violet-100 text-violet-800' },
 }
 
 export default function DashboardPage() {

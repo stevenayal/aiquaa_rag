@@ -8,7 +8,20 @@ export function createClient() {
 }
 
 // Tipos de las tablas nuevas
-export type Industry = 'banca' | 'telecomunicaciones'
+export type Industry =
+  | 'qa'
+  | 'fintech'
+  | 'seguros'
+  | 'salud'
+  | 'energia'
+  | 'retail'
+  | 'logistica'
+  | 'gobierno'
+  | 'educacion'
+  | 'agroindustria'
+  | 'manufactura'
+  | 'banca'
+  | 'telecomunicaciones'
 export type MemberRole = 'admin' | 'editor' | 'viewer'
 export type Priority = 'Alta' | 'Media' | 'Baja'
 export type RegRisk = 'Crítico' | 'Alto' | 'Medio' | 'Bajo'

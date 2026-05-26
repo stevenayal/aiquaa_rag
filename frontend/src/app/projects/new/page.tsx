@@ -4,12 +4,29 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createProject } from '@/lib/api'
+import type { Industry } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
+
+const INDUSTRY_OPTIONS: Array<{ id: Industry; label: string; hint: string; icon: string }> = [
+  { id: 'qa', label: 'QA', hint: 'Macro dominio transversal', icon: '🧪' },
+  { id: 'fintech', label: 'Fintech', hint: 'Pagos, onboarding, AML', icon: '💳' },
+  { id: 'seguros', label: 'Seguros', hint: 'Polizas y siniestros', icon: '🛡️' },
+  { id: 'salud', label: 'Salud', hint: 'Trazabilidad y riesgo', icon: '🏥' },
+  { id: 'energia', label: 'Energia', hint: 'Continuidad y seguridad', icon: '⚡' },
+  { id: 'retail', label: 'Retail', hint: 'E-commerce y performance', icon: '🛒' },
+  { id: 'logistica', label: 'Logistica', hint: 'Tracking y SLA', icon: '🚚' },
+  { id: 'gobierno', label: 'Gobierno', hint: 'Pliegos y normativa', icon: '🏛️' },
+  { id: 'educacion', label: 'Educacion', hint: 'LMS y accesibilidad', icon: '🎓' },
+  { id: 'agroindustria', label: 'Agroindustria', hint: 'Operacion y calidad', icon: '🌾' },
+  { id: 'manufactura', label: 'Manufactura', hint: 'Procesos y trazabilidad', icon: '🏭' },
+  { id: 'banca', label: 'Banca', hint: 'Sin BCP en foco actual', icon: '🏦' },
+  { id: 'telecomunicaciones', label: 'Telecom', hint: 'Sin CONATEL en foco actual', icon: '📡' },
+]
 
 export default function NewProjectPage() {
   const router = useRouter()
   const [name, setName]               = useState('')
-  const [industry, setIndustry]       = useState<'banca' | 'telecomunicaciones' | ''>('')
+  const [industry, setIndustry]       = useState<Industry | ''>('')
   const [description, setDescription] = useState('')
   const [error, setError]             = useState('')
   const [loading, setLoading]         = useState(false)
@@ -65,33 +82,23 @@ export default function NewProjectPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Industria regulatoria <span className="text-red-500">*</span>
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIndustry('banca')}
-                  className={`border-2 rounded-xl p-4 text-left transition-colors ${
-                    industry === 'banca'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-2xl mb-1">🏦</div>
-                  <div className="font-semibold text-gray-900">Banca</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Regulaciones BCP</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIndustry('telecomunicaciones')}
-                  className={`border-2 rounded-xl p-4 text-left transition-colors ${
-                    industry === 'telecomunicaciones'
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-2xl mb-1">📡</div>
-                  <div className="font-semibold text-gray-900">Telecom</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Regulaciones CONATEL</div>
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {INDUSTRY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setIndustry(opt.id)}
+                    className={`border-2 rounded-xl p-4 text-left transition-colors ${
+                      industry === opt.id
+                        ? 'border-brand-500 bg-brand-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">{opt.icon}</div>
+                    <div className="font-semibold text-gray-900">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.hint}</div>
+                  </button>
+                ))}
               </div>
             </div>
 

@@ -104,9 +104,12 @@ def handler(request, response):
             response.status_code = 400
             response.body = json.dumps({"error": "name is required"})
             return
-        if industry not in ("banca", "telecomunicaciones"):
+        if industry not in ALLOWED_INDUSTRIES:
             response.status_code = 400
-            response.body = json.dumps({"error": "industry must be 'banca' or 'telecomunicaciones'"})
+            response.body = json.dumps({
+                "error": "industry is invalid",
+                "allowed": sorted(ALLOWED_INDUSTRIES),
+            })
             return
 
         row = {
@@ -259,3 +262,18 @@ def handler(request, response):
 
     response.status_code = 404
     response.body = json.dumps({"error": "Endpoint no encontrado"})
+ALLOWED_INDUSTRIES = {
+    "qa",
+    "fintech",
+    "seguros",
+    "salud",
+    "energia",
+    "retail",
+    "logistica",
+    "gobierno",
+    "educacion",
+    "agroindustria",
+    "manufactura",
+    "banca",
+    "telecomunicaciones",
+}

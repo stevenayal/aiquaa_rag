@@ -8,8 +8,19 @@ import type { Project, Analysis } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 
 const INDUSTRY_LABELS: Record<string, string> = {
-  banca:              '🏦 Banca (BCP)',
-  telecomunicaciones: '📡 Telecom (CONATEL)',
+  qa:                 '🧪 QA',
+  fintech:            '💳 Fintech',
+  seguros:            '🛡️ Seguros',
+  salud:              '🏥 Salud',
+  energia:            '⚡ Energia',
+  retail:             '🛒 Retail',
+  logistica:          '🚚 Logistica',
+  gobierno:           '🏛️ Gobierno',
+  educacion:          '🎓 Educacion',
+  agroindustria:      '🌾 Agroindustria',
+  manufactura:        '🏭 Manufactura',
+  banca:              '🏦 Banca',
+  telecomunicaciones: '📡 Telecom',
 }
 
 const RISK_COLORS: Record<string, string> = {

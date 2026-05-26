@@ -45,7 +45,7 @@ export async function getProjects() {
 
 export async function createProject(data: {
   name: string
-  industry: 'banca' | 'telecomunicaciones'
+  industry: import('./supabase').Industry
   description?: string
 }) {
   return apiFetch<{ project: import('./supabase').Project }>('/api/projects', {
