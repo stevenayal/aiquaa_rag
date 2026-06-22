@@ -29,7 +29,14 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 _root = Path(__file__).parent if "__file__" in dir() else Path(".")
-for _env in [_root / ".env", _root / "BCP" / ".env", _root / "CONATEL" / ".env"]:
+_main = _root.parent.parent.parent  # worktrees/<name>/ → worktrees/ → .claude/ → main repo
+for _env in [
+    _root / ".env",
+    _root / "BCP" / ".env",
+    _root / "CONATEL" / ".env",
+    _main / "BCP" / ".env",
+    _main / "CONATEL" / ".env",
+]:
     if _env.exists():
         load_dotenv(_env)
         break
@@ -283,7 +290,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Re-embedder RAG — agrega embeddings faltantes")
     parser.add_argument("--source", choices=[
                         "bcp", "conatel", "seprelad", "sis", "mspbs",
-                        "dinavisa", "mic", "dnit", "mec"
+                        "dinavisa", "mic", "dnit", "mec",
+                        "istqb_ctfl", "istqb_performance",
+                        "istqb_agile", "istqb_tae", "owasp_wstg",
+                        "qa_heuristics",
+                        "qa_patterns_fintech", "qa_patterns_salud", "qa_patterns_retail",
                     ],
                         help="Filtrar por fuente (default: todas)")
     parser.add_argument("--category",

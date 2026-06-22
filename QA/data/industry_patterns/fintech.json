@@ -1,0 +1,176 @@
+{
+  "industry": "fintech",
+  "description": "Patrones de prueba para sistemas financieros y fintech: pagos, transferencias, KYC, antifraude, billeteras digitales.",
+  "risk_areas": [
+    {
+      "area": "Idempotencia de pagos",
+      "risk": "Alto",
+      "description": "Un pago ejecutado dos veces (doble submit, retry automático, reconexión) puede debitar el dinero dos veces al usuario.",
+      "istqb_technique": "Transición de estado + Prueba de concurrencia",
+      "test_cases": [
+        {
+          "id": "FIN-01",
+          "title": "Doble submit de pago por click rápido",
+          "condition": "Usuario hace doble click en 'Pagar' antes de que cargue la respuesta",
+          "expected": "Solo se procesa un pago; el segundo request retorna error 409 o success con el mismo transaction_id",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-02",
+          "title": "Retry automático por timeout de red",
+          "condition": "La red se corta después de que el servidor procesa el pago pero antes de que llegue la respuesta al cliente; el cliente reintenta",
+          "expected": "El sistema detecta el pago duplicado por idempotency_key y no lo vuelve a procesar",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-03",
+          "title": "Pago con idempotency_key inválida",
+          "condition": "Se envía el mismo pago con dos idempotency_keys diferentes",
+          "expected": "Se procesan dos pagos separados; el sistema los registra como transacciones distintas",
+          "priority": "Media"
+        }
+      ],
+      "negative_cases": [
+        "Pago con saldo exacto → verificar que no queda saldo negativo",
+        "Pago con moneda diferente a la de la cuenta",
+        "Pago a destinatario bloqueado o inexistente"
+      ]
+    },
+    {
+      "area": "Límites de transacción",
+      "risk": "Alto",
+      "description": "Cada operación financiera tiene límites diarios, por transacción y por tipo de cuenta. Violaciones pueden generar fraude o incumplimiento regulatorio.",
+      "istqb_technique": "Análisis de Valor Límite + Partición de Equivalencia",
+      "test_cases": [
+        {
+          "id": "FIN-04",
+          "title": "Transferencia en el límite diario exacto",
+          "condition": "Usuario con límite diario de $10,000 intenta transferir exactamente $10,000",
+          "expected": "Transferencia aprobada; saldo de límite diario = $0",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-05",
+          "title": "Transferencia un peso por encima del límite",
+          "condition": "Usuario con límite diario de $10,000 intenta transferir $10,000.01",
+          "expected": "Transferencia rechazada con mensaje claro indicando el límite disponible",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-06",
+          "title": "Múltiples transferencias que suman el límite exacto",
+          "condition": "Usuario hace 10 transferencias de $1,000 cada una (límite diario $10,000)",
+          "expected": "Las 10 son aprobadas; la transferencia 11 es rechazada",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-07",
+          "title": "Reset de límite diario a medianoche",
+          "condition": "Usuario llega al límite a las 23:59, intenta transferir a las 00:01",
+          "expected": "El límite se reinicia correctamente; la transferencia post-medianoche es aprobada",
+          "priority": "Media"
+        }
+      ],
+      "negative_cases": [
+        "Límite con monto negativo por error de UI",
+        "Límite en moneda diferente sin conversión",
+        "Bypass de límite por fragmentar en micro-transacciones"
+      ]
+    },
+    {
+      "area": "KYC y verificación de identidad",
+      "risk": "Alto",
+      "description": "Know Your Customer: verificación de identidad requerida por regulaciones AML. Fallas permiten apertura de cuentas falsas o evasión de controles.",
+      "istqb_technique": "Tabla de decisión + Prueba de transición de estado",
+      "test_cases": [
+        {
+          "id": "FIN-08",
+          "title": "Apertura de cuenta con documentos vencidos",
+          "condition": "Usuario sube foto de DNI con fecha de vencimiento anterior a hoy",
+          "expected": "El sistema rechaza el documento e informa la razón específica",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-09",
+          "title": "Foto de selfie sin match con documento",
+          "condition": "El sistema de OCR/biometría compara foto de selfie con foto del DNI con baja similitud (<70%)",
+          "expected": "KYC rechazado; se solicita re-intento o revisión manual",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-10",
+          "title": "Operaciones durante KYC pendiente",
+          "condition": "Usuario intenta transferir dinero antes de completar la verificación KYC",
+          "expected": "Operación bloqueada con mensaje claro sobre el estado de verificación",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Documento de otro país sin soporte",
+        "Nombre en documento con caracteres especiales (ñ, acentos)",
+        "Menores de edad intentando abrir cuenta",
+        "Mismos documentos usados para múltiples cuentas"
+      ]
+    },
+    {
+      "area": "Detección de fraude",
+      "risk": "Alto",
+      "description": "Patrones de comportamiento anómalos que indican fraude: geo-imposible, velocity de transacciones, montos inusuales.",
+      "istqb_technique": "Prueba exploratoria + Tabla de decisión",
+      "test_cases": [
+        {
+          "id": "FIN-11",
+          "title": "Transacción geo-imposible",
+          "condition": "Transacción en Buenos Aires a las 10:00 y otra en Madrid a las 10:05 (imposible físicamente)",
+          "expected": "Sistema bloquea segunda transacción y alerta al usuario vía email/SMS",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-12",
+          "title": "Velocity de micro-transacciones",
+          "condition": "50 transacciones de $1 en menos de 1 minuto (patrón de card testing)",
+          "expected": "Sistema detecta patrón y bloquea la tarjeta temporalmente",
+          "priority": "Alta"
+        },
+        {
+          "id": "FIN-13",
+          "title": "Cambio de beneficiario seguido de transferencia grande",
+          "condition": "Usuario agrega nuevo beneficiario y transfiere >80% de su saldo en menos de 5 minutos",
+          "expected": "Sistema aplica período de enfriamiento o requiere autenticación adicional",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Falso positivo: viajero frecuente con transacciones legítimas en múltiples países",
+        "Usuario con patrón legítimo de muchas transacciones pequeñas (e-commerce vendor)",
+        "Desbloqueo de cuenta después de falso positivo"
+      ]
+    },
+    {
+      "area": "Reconciliación contable",
+      "risk": "Medio",
+      "description": "Los movimientos en el sistema deben cuadrar exactamente con los registros contables. Diferencias de un centavo son bugs.",
+      "istqb_technique": "Análisis de valor límite + Cálculo de redondeo",
+      "test_cases": [
+        {
+          "id": "FIN-14",
+          "title": "Redondeo en conversión de moneda",
+          "condition": "Transferencia de USD 100 a ARS con tasa de cambio con 6 decimales",
+          "expected": "El monto redondeado es consistente en todos los registros (débito = crédito)",
+          "priority": "Media"
+        },
+        {
+          "id": "FIN-15",
+          "title": "Rollback de transacción fallida",
+          "condition": "La parte de crédito de una transferencia falla después de que el débito fue exitoso",
+          "expected": "Rollback completo: el débito es revertido; saldo vuelve al estado inicial",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Transferencia con fee que lleva el saldo a cero exacto",
+        "Fee calculado sobre monto con múltiples impuestos encadenados"
+      ]
+    }
+  ]
+}

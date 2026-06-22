@@ -1,0 +1,150 @@
+{
+  "industry": "salud",
+  "description": "Patrones de prueba para sistemas de salud: historia clínica electrónica, medicación, alertas clínicas, trazabilidad, privacidad de datos de paciente.",
+  "risk_areas": [
+    {
+      "area": "Trazabilidad de medicación",
+      "risk": "Alto",
+      "description": "Los errores de medicación son la causa más frecuente de daño al paciente por fallas en sistemas de salud. La trazabilidad completa es requisito regulatorio en la mayoría de jurisdicciones.",
+      "istqb_technique": "Transición de estado + Tabla de decisión",
+      "test_cases": [
+        {
+          "id": "SAL-01",
+          "title": "Prescripción de medicamento con interacción conocida",
+          "condition": "Médico prescribe medicamento B a paciente que ya tiene prescrito medicamento A, y A+B tienen interacción grave documentada",
+          "expected": "Sistema muestra alerta de interacción antes de guardar; requiere confirmación explícita del médico con justificación",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-02",
+          "title": "Dosis por encima del límite máximo para el peso del paciente",
+          "condition": "Prescripción de dosis que supera el máximo permitido según el peso del paciente (pediátrico)",
+          "expected": "Alerta de dosis excesiva con cálculo sugerido basado en peso; no bloquea pero requiere doble confirmación",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-03",
+          "title": "Administración de medicamento sin verificación de paciente",
+          "condition": "Enfermera intenta registrar administración sin escanear la pulsera del paciente",
+          "expected": "Sistema bloquea el registro hasta confirmar identidad del paciente (código de barras o huella)",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-04",
+          "title": "Medicamento fuera del horario prescrito",
+          "condition": "Intento de registrar administración 3 horas antes del horario prescrito",
+          "expected": "Alerta visible con la hora correcta; permite override con justificación",
+          "priority": "Media"
+        }
+      ],
+      "negative_cases": [
+        "Medicamento prescrito para alergia declarada del paciente",
+        "Prescripción sin diagnóstico CIE-10 asociado",
+        "Medicamento suspendido que aún aparece activo en el sistema",
+        "Administración registrada por usuario sin permiso de enfermería"
+      ]
+    },
+    {
+      "area": "Identidad del paciente",
+      "risk": "Alto",
+      "description": "Confundir a dos pacientes es uno de los errores más graves en sistemas hospitalarios. El patient matching debe tener criterios robustos.",
+      "istqb_technique": "Partición de equivalencia + Análisis de valor límite",
+      "test_cases": [
+        {
+          "id": "SAL-05",
+          "title": "Pacientes con nombre y apellido idénticos",
+          "condition": "Existen dos pacientes con nombre 'Juan Pérez' y fecha de nacimiento diferente",
+          "expected": "El sistema distingue ambos registros claramente; no hay merge automático; cualquier acción requiere confirmación explícita del documento de identidad",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-06",
+          "title": "Búsqueda por nombre con error de tipeo",
+          "condition": "Búsqueda de 'Martines' debería encontrar a 'Martínez'",
+          "expected": "Búsqueda fuzzy muestra resultado con indicador de similitud; no asume identidad sin confirmación",
+          "priority": "Media"
+        },
+        {
+          "id": "SAL-07",
+          "title": "Paciente sin documento (emergencia)",
+          "condition": "Ingreso de emergencia de paciente inconsciente sin documentación",
+          "expected": "Sistema permite crear registro provisional con ID temporal; proceso claro para linkear con identidad real posterior",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Paciente con nombre cambiado por trámite legal",
+        "Gemelos con fechas de nacimiento iguales y nombres similares",
+        "DNI dado de baja o robado"
+      ]
+    },
+    {
+      "area": "Privacidad y acceso a datos (HIPAA / Ley de Datos de Salud)",
+      "risk": "Alto",
+      "description": "Los datos de salud son los datos personales más sensibles. El acceso debe ser estrictamente por necesidad clínica. Violaciones generan sanciones graves.",
+      "istqb_technique": "Tabla de decisión + Prueba de seguridad",
+      "test_cases": [
+        {
+          "id": "SAL-08",
+          "title": "Médico accediendo a historia de paciente no asignado",
+          "condition": "Médico de cardiología intenta ver la historia clínica completa de un paciente del servicio de psiquiatría que no es su paciente",
+          "expected": "Acceso denegado; registro de auditoría creado; alerta opcional al responsable de privacidad",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-09",
+          "title": "Export masivo de datos de paciente",
+          "condition": "Usuario descarga un reporte con datos de todos los pacientes en un rango de fechas",
+          "expected": "Operación requiere justificación y aprobación de supervisor; se registra en log de auditoría con usuario, fecha, hora y motivo",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-10",
+          "title": "Acceso de familiar a historia del paciente",
+          "condition": "Familiar con poder notarial solicita acceso a la historia clínica de paciente internado",
+          "expected": "Sistema tiene flujo para registrar autorización legal y limitar el acceso a lo autorizado (no historia completa)",
+          "priority": "Media"
+        }
+      ],
+      "negative_cases": [
+        "Médico buscando por curiosidad a una persona pública",
+        "Acceso de RR.HH. a diagnósticos de empleados",
+        "Impresión de historia clínica completa sin cifrado de archivos"
+      ]
+    },
+    {
+      "area": "Alertas clínicas críticas",
+      "risk": "Alto",
+      "description": "Valores de laboratorio o signos vitales fuera de rango que requieren acción inmediata. Un sistema que no alerta o tarda en alertar puede costar vidas.",
+      "istqb_technique": "Análisis de valor límite + Prueba de transición de estado",
+      "test_cases": [
+        {
+          "id": "SAL-11",
+          "title": "Valor crítico de laboratorio sin alertar",
+          "condition": "Resultado de laboratorio con glucosa de 500 mg/dL (crisis hiperglucémica) ingresa al sistema",
+          "expected": "Alerta inmediata push a médico tratante en menos de 2 minutos; registro de que la alerta fue visualizada",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-12",
+          "title": "Saturación de oxígeno por debajo del umbral crítico",
+          "condition": "Monitor de paciente reporta SpO2 de 88% (límite crítico: 90%)",
+          "expected": "Alarma sonora en enfermería, notificación al médico de guardia, registro en historia clínica con timestamp exacto",
+          "priority": "Alta"
+        },
+        {
+          "id": "SAL-13",
+          "title": "Alerta ignorada repetidamente (alert fatigue)",
+          "condition": "La misma alerta fue marcada como 'vista' 10 veces sin acción en 1 hora",
+          "expected": "Sistema escala la alerta al supervisor o jefe de guardia; registra el patrón para auditoría",
+          "priority": "Media"
+        }
+      ],
+      "negative_cases": [
+        "Equipo de monitoreo desconectado que no genera alerta de disconnection",
+        "Alerta enviada a médico que está de licencia sin reencaminamiento",
+        "Valor de laboratorio con unidad de medida incorrecta (mg/dL vs. mmol/L)"
+      ]
+    }
+  ]
+}

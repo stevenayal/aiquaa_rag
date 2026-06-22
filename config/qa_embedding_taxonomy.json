@@ -1,6 +1,18 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "updated": "2026-06-22",
   "focus": "qa_macro",
+  "sources": {
+    "istqb_ctfl":        "ISTQB CTFL v4.0 Programa de Estudio (ES)",
+    "istqb_performance": "ISTQB Performance Tester with JMeter Syllabus (ES + EN)",
+    "istqb_agile":       "ISTQB CT-AUT Agile Tester Extension Syllabus (ES) — pendiente PDF",
+    "istqb_tae":         "ISTQB CT-TAE Test Automation Engineer Syllabus (ES) — pendiente PDF",
+    "owasp_wstg":        "OWASP Web Security Testing Guide v4.2 — pendiente PDF",
+    "qa_heuristics":     "Heurísticas de testing QA: SFDIPOT, FEW HICCUPPS, CRISP (contenido interno)",
+    "qa_patterns_fintech": "Patrones de prueba Fintech Wave 1 (contenido interno)",
+    "qa_patterns_salud":   "Patrones de prueba Salud Wave 1 (contenido interno)",
+    "qa_patterns_retail":  "Patrones de prueba Retail Wave 1 (contenido interno)"
+  },
   "excluded_sources": [
     "bcp",
     "conatel"
@@ -8,31 +20,28 @@
   "indexes": [
     {
       "id": "qa_core_index",
-      "description": "Fundamentos QA, ciclo de pruebas, tecnicas, gestion, defectos, metricas, automatizacion"
+      "description": "Fundamentos QA segun ISTQB CTFL v4.0: principios, ciclo, tecnicas, gestion, defectos, metricas",
+      "source": "istqb_ctfl",
+      "ctfl_chapters": {
+        "cap1_fundamentos":  "fundamentos_testing",
+        "cap2_ciclo_vida":   "proceso_prueba",
+        "cap3_estatico":     "tecnicas_experiencia",
+        "cap4_tecnicas":     ["tecnicas_caja_negra", "tecnicas_caja_blanca", "tecnicas_experiencia"],
+        "cap5_gestion":      ["gestion_pruebas", "risk_based_testing", "defect_management"],
+        "cap6_herramientas": "automatizacion"
+      }
     },
     {
-      "id": "exam_index",
-      "description": "Preguntas y respuestas de examenes CTFL/ISTQB"
+      "id": "performance_index",
+      "description": "Pruebas de rendimiento/carga con JMeter: conceptos, planificacion, ejecucion, metricas",
+      "source": "istqb_performance",
+      "languages": ["es", "en"]
     },
     {
       "id": "industry_index",
-      "description": "Casos y reglas QA por industria"
+      "description": "Casos y reglas QA por industria (Wave 1-3, pendiente de contenido)",
+      "source": "pending"
     }
-  ],
-  "domains": [
-    "qa_core",
-    "fintech",
-    "seguros",
-    "salud",
-    "energia",
-    "retail",
-    "logistica",
-    "gobierno",
-    "educacion",
-    "agroindustria",
-    "manufactura",
-    "banca",
-    "telecomunicaciones"
   ],
   "topic_catalog": [
     "fundamentos_testing",
@@ -45,11 +54,14 @@
     "risk_based_testing",
     "automatizacion",
     "metricas_calidad",
+    "performance",
     "compliance",
     "seguridad",
+    "seguridad_web",
     "accesibilidad",
-    "performance",
-    "integraciones"
+    "integraciones",
+    "testing_agil",
+    "shift_left"
   ],
   "source_types": [
     "syllabus",
@@ -73,19 +85,19 @@
   },
   "metadata_schema": {
     "required": [
-      "domain",
-      "topic",
-      "source_type",
+      "industry",
+      "source",
+      "category",
+      "doc_title",
       "lang",
-      "version",
-      "confidence_ocr"
+      "topics",
+      "source_type"
     ],
     "optional": [
-      "industry_priority",
-      "published_at",
-      "doc_title",
-      "page_range",
-      "exam_model"
+      "published",
+      "exam_model",
+      "ctfl_chapter",
+      "page_range"
     ]
   },
   "industry_priority_waves": {

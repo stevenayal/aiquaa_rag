@@ -1,0 +1,84 @@
+[
+  {
+    "name": "SFDIPOT",
+    "full_name": "Structure, Function, Data, Inputs, Platform, Operations, Time",
+    "author": "James Bach",
+    "description": "Heurística para exploración sistemática de un producto de software. Cada letra representa una dimensión de análisis que un tester debe interrogar para identificar riesgos.",
+    "use_case": "Exploración inicial de riesgos cuando no hay una especificación completa o al iniciar testing exploratorio de una feature nueva.",
+    "items": {
+      "Structure": "¿Qué componentes tiene el sistema? ¿Qué módulos, capas, servicios, librerías? ¿Qué puede romperse en cada componente? Explorar: integración entre componentes, puntos de corte, dependencias ocultas.",
+      "Function": "¿Qué hace el sistema? ¿Qué debería hacer y no hace? ¿Qué hace que no debería? Explorar: happy path, caminos alternativos, funciones documentadas vs. comportamiento real.",
+      "Data": "¿Qué datos procesa el sistema? Explorar: valores vacíos, nulos, extremos, formato inválido, encoding, idiomas, caracteres especiales, inyección, datos de producción vs. datos de prueba.",
+      "Inputs": "¿Cómo recibe datos el sistema? Explorar: formularios web, APIs REST/SOAP, archivos CSV/XML/JSON, mensajes de cola, sensores IoT, integración con terceros. ¿Qué pasa con inputs malformados?",
+      "Platform": "¿En qué entorno corre el sistema? Explorar: sistema operativo, browser y versión, dispositivo móvil, resolución de pantalla, idioma/locale, zona horaria, versión de base de datos, versión de runtime.",
+      "Operations": "¿Quién usa el sistema y cómo? Explorar: flujos de trabajo reales vs. documentados, uso por roles diferentes, operaciones en paralelo, uso en condiciones adversas (conexión lenta, batería baja).",
+      "Time": "¿Cómo se comporta el sistema en el tiempo? Explorar: tiempo de startup, tiempo de shutdown, timeouts, datos históricos, concurrencia, sesiones largas, caducidad de tokens, cambios de fecha/hora."
+    },
+    "topics": ["tecnicas_experiencia", "risk_based_testing", "gestion_pruebas"],
+    "related_techniques": ["Prueba exploratoria", "Charter-based testing", "Sesiones de testing"],
+    "example_application": "Feature: Login de usuario. S=Auth service + DB + frontend. F=autenticar, bloquear, recordar sesión. D=credenciales vacías/incorrectas/SQL injection. I=formulario web, API /auth. P=Chrome/Firefox/Safari/móvil. O=usuario nuevo vs. recurrente, admin vs. cliente. T=sesión expirada, token caducado, bloqueo tras N intentos."
+  },
+  {
+    "name": "FEW HICCUPPS",
+    "full_name": "Familiarity, Explainability, World, History, Image, Comparable Products, Claims, User Expectations, Purpose, Product, Standards, Statutes",
+    "author": "Michael Bolton & James Bach",
+    "description": "Conjunto de oráculos de testing: criterios para determinar si un comportamiento del sistema es un bug o funciona correctamente, incluso sin una especificación explícita.",
+    "use_case": "Definir criterio de fallo cuando la especificación es ambigua, incompleta o inexistente. También para identificar bugs no documentados durante testing exploratorio.",
+    "items": {
+      "Familiarity": "¿El sistema se comporta diferente a como los usuarios esperan basándose en experiencia previa con productos similares? Si el Ctrl+Z no hace undo, es un bug aunque no esté en la spec.",
+      "Explainability": "¿Podemos explicar por qué el resultado del sistema es correcto? Si no podemos justificarlo, hay riesgo de que sea un bug.",
+      "World": "¿El sistema viola leyes del mundo real, del negocio o de la lógica? Un descuento del 110% viola lógica de negocio. Una fecha de nacimiento en el futuro viola realidad.",
+      "History": "¿El sistema se comporta diferente respecto a versiones anteriores sin que debiera? Una regresión no documentada es un bug aunque no esté en la spec de la nueva versión.",
+      "Image": "¿El comportamiento del sistema daña la imagen de marca, genera desconfianza o vergüenza para la empresa? Texto con faltas de ortografía en producción, mensajes de error técnicos al usuario.",
+      "Comparable Products": "¿El sistema hace menos que la competencia en funciones básicas esperadas del sector? Si todos los e-commerce tienen filtro por precio y el nuestro no, es un gap.",
+      "Claims": "¿El sistema incumple lo que dice la especificación, documentación, manual de usuario o mensajes de la propia interfaz?",
+      "User Expectations": "¿El sistema sorprende negativamente al usuario? ¿Hace algo inesperado aunque técnicamente correcto según la spec? La usabilidad también genera bugs.",
+      "Purpose": "¿El sistema no cumple el objetivo de negocio para el que fue creado, aunque funcione técnicamente?",
+      "Product": "¿El comportamiento es inconsistente con otras partes del mismo producto? Si en una pantalla el botón 'Guardar' confirma y en otra cancela, es un bug de consistencia.",
+      "Standards": "¿El sistema viola estándares técnicos o de industria aplicables? WCAG 2.1 AA, ISO 8601 para fechas, RFC 5321 para emails, PCI-DSS para pagos, HL7 para salud.",
+      "Statutes": "¿El sistema viola regulaciones legales vigentes? GDPR, Ley de Datos Personales, normativa fiscal, regulaciones sectoriales (bancarias, salud, etc.)."
+    },
+    "topics": ["tecnicas_experiencia", "risk_based_testing", "compliance", "seguridad"],
+    "related_techniques": ["Testing exploratorio", "Análisis de riesgo", "Revisión de especificaciones"],
+    "example_application": "Al probar un formulario de registro: Familiarity=¿funciona como otros registros conocidos? World=¿acepta fecha de nacimiento 01/01/3000? Claims=¿cumple lo que dice el tooltip? Standards=¿el email acepta RFC 5321? Statutes=¿informa sobre uso de datos (GDPR)?"
+  },
+  {
+    "name": "CRISP",
+    "full_name": "Concurrency, Resources, Inputs, State, Paths",
+    "author": "Heurística de la comunidad QA",
+    "description": "Checklist rápido de riesgos técnicos para aplicar en code review o testing de una nueva funcionalidad. Cinco preguntas que revelan los errores técnicos más comunes.",
+    "use_case": "Code review orientado a riesgo técnico, pruebas de integración, análisis de impacto de un cambio. Especialmente útil para APIs, procesos batch y operaciones concurrentes.",
+    "items": {
+      "Concurrency": "¿Qué pasa si dos usuarios o dos procesos ejecutan esta operación al mismo tiempo? Explorar: race conditions, deadlocks, datos inconsistentes por falta de locking, doble submit de formularios, pagos duplicados.",
+      "Resources": "¿El sistema libera correctamente los recursos que consume? Explorar: memory leaks, conexiones de base de datos no cerradas, archivos abiertos no cerrados, handles de sistema operativo, threads huérfanos.",
+      "Inputs": "¿El sistema valida todos los inputs externos antes de procesarlos? Explorar: SQL injection, XSS, command injection, SSRF, validación de tipos, límites de tamaño, encoding de caracteres.",
+      "State": "¿El estado del sistema queda consistente si algo falla a mitad de una operación? Explorar: transacciones parciales, rollback correcto, estado de UI tras error, reintentos idempotentes, mensajes de error informativos.",
+      "Paths": "¿Qué rutas de código nunca se ejecutan en el happy path pero pueden fallar en producción? Explorar: manejo de excepciones, timeouts, circuit breakers, fallbacks, logs de error, paths de cleanup."
+    },
+    "topics": ["risk_based_testing", "seguridad", "seguridad_web", "tecnicas_caja_blanca"],
+    "related_techniques": ["Análisis de valor límite", "Prueba de carga", "Prueba de seguridad"],
+    "example_application": "API de transferencia bancaria: C=dos transferencias simultáneas del mismo saldo, R=conexiones DB si falla mid-transfer, I=monto negativo/SQL en campo monto, S=¿queda dinero debitado sin acreditar si falla la red?, P=¿qué pasa si el log de auditoría falla?"
+  },
+  {
+    "name": "OWASP Top 10 como checklist de riesgo",
+    "full_name": "Open Web Application Security Project Top 10 2021",
+    "author": "OWASP Foundation",
+    "description": "Las 10 categorías de riesgo de seguridad más críticas en aplicaciones web según OWASP 2021. Cada categoría implica casos de prueba de seguridad específicos.",
+    "use_case": "Identificar riesgos de seguridad en cualquier aplicación web o API. Usar como checklist mínimo obligatorio para toda feature que procese datos de usuario o tenga autenticación.",
+    "items": {
+      "A01 Broken Access Control": "¿Los usuarios pueden acceder a recursos que no les corresponden? Probar: acceso directo a URLs con otro ID, escalamiento de privilegios, IDOR, operaciones CRUD sin autorización, CORS mal configurado.",
+      "A02 Cryptographic Failures": "¿Los datos sensibles están protegidos en tránsito y en reposo? Probar: HTTPS obligatorio, algoritmos de cifrado obsoletos (MD5, SHA1), contraseñas en texto plano, tokens predecibles, secretos en logs.",
+      "A03 Injection": "¿El sistema ejecuta datos del usuario como comandos? Probar: SQL injection en todos los inputs, XSS (reflected/stored/DOM), command injection, LDAP injection, template injection.",
+      "A04 Insecure Design": "¿El diseño tiene flaws que ningún control puede mitigar? Probar: flujos de negocio bypasseables, ausencia de rate limiting, falta de separación de privilegios, missing threat modeling.",
+      "A05 Security Misconfiguration": "¿La configuración del sistema expone información o funcionalidades innecesarias? Probar: errores con stack trace en producción, cabeceras de seguridad ausentes (CSP, HSTS), puertos abiertos innecesarios, credenciales por defecto.",
+      "A06 Vulnerable Components": "¿El sistema usa componentes con vulnerabilidades conocidas? Verificar: CVEs en dependencias, versiones desactualizadas de frameworks, librerías sin mantenimiento.",
+      "A07 Identification and Authentication Failures": "¿La autenticación puede ser bypasseada o atacada? Probar: fuerza bruta sin bloqueo, contraseñas débiles permitidas, tokens de sesión predecibles, falta de MFA, recuperación de contraseña insegura.",
+      "A08 Software and Data Integrity Failures": "¿El sistema verifica la integridad de actualizaciones y datos críticos? Probar: dependencias sin checksum, auto-update sin firma, deserialización de datos no confiables.",
+      "A09 Security Logging and Monitoring Failures": "¿El sistema registra y alerta sobre eventos de seguridad? Probar: logins fallidos no registrados, ausencia de alertas sobre ataques, logs manipulables, sin retención de logs.",
+      "A10 Server-Side Request Forgery": "¿El servidor puede ser forzado a hacer requests a sistemas internos? Probar: parámetros de URL en servicios que hacen fetching, acceso a metadata de cloud, bypass de firewalls internos."
+    },
+    "topics": ["seguridad", "seguridad_web", "risk_based_testing", "compliance"],
+    "related_techniques": ["OWASP Testing Guide WSTG", "Penetration testing", "SAST/DAST"],
+    "example_application": "Para un módulo de perfil de usuario: A01=¿puedo ver el perfil de otro usuario cambiando el ID en la URL? A02=¿la contraseña se guarda hasheada con bcrypt? A03=¿el campo 'bio' acepta <script>? A07=¿hay bloqueo tras 5 intentos fallidos de login?"
+  }
+]
