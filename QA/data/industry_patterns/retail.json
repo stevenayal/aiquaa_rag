@@ -1,0 +1,183 @@
+{
+  "industry": "retail",
+  "description": "Patrones de prueba para plataformas de retail y e-commerce: carrito, checkout, stock, descuentos, devoluciones, logística.",
+  "risk_areas": [
+    {
+      "area": "Carrito de compras concurrente",
+      "risk": "Alto",
+      "description": "Dos usuarios comprando el último item disponible al mismo tiempo es un escenario frecuente que puede resultar en overselling o pérdida de ventas.",
+      "istqb_technique": "Prueba de concurrencia + Transición de estado",
+      "test_cases": [
+        {
+          "id": "RET-01",
+          "title": "Dos usuarios compran el último stock simultáneamente",
+          "condition": "Stock = 1 unidad. Usuario A y Usuario B presionan 'Comprar' en el mismo segundo",
+          "expected": "Solo una compra es confirmada; el otro recibe mensaje de 'sin stock' antes del cobro; no hay sobreventa",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-02",
+          "title": "Reserva de stock durante checkout",
+          "condition": "Usuario A inicia el checkout (tiene el item en el carrito); Usuario B puede agregar el mismo item a su carrito",
+          "expected": "El stock se reserva para Usuario A durante el checkout (tiempo configurable: ej. 15 min); Usuario B ve el stock disponible real",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-03",
+          "title": "Checkout abandonado libera stock reservado",
+          "condition": "Usuario A inicia checkout y no completa el pago en 15 minutos",
+          "expected": "La reserva se libera automáticamente; el stock vuelve a estar disponible",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Usuario agrega al carrito más unidades de las disponibles en stock",
+        "Stock actualizado manualmente durante un checkout en progreso",
+        "Producto discontinuado que aún aparece disponible"
+      ]
+    },
+    {
+      "area": "Stock negativo y gestión de inventario",
+      "risk": "Alto",
+      "description": "El sistema nunca debe permitir que el stock baje de cero. Stock negativo implica venta de productos inexistentes.",
+      "istqb_technique": "Análisis de valor límite + Partición de equivalencia",
+      "test_cases": [
+        {
+          "id": "RET-04",
+          "title": "Compra de exactamente el último item",
+          "condition": "Stock = 1. Usuario compra 1 unidad",
+          "expected": "Compra aprobada; stock queda en 0; producto marcado como 'sin stock' inmediatamente",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-05",
+          "title": "Intento de compra con stock = 0",
+          "condition": "Producto con stock = 0 visible en el carrito de un usuario que llegó antes de que se actualizara la UI",
+          "expected": "Sistema rechaza el checkout con mensaje claro; no cobra; ofrece alternativas o notificación de reposición",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-06",
+          "title": "Devolución que aumenta stock",
+          "condition": "Devolución aprobada de un producto que estaba en stock 0",
+          "expected": "Stock sube a 1; producto vuelve a ser visible como disponible; notificación a usuarios en lista de espera si existe",
+          "priority": "Media"
+        }
+      ],
+      "negative_cases": [
+        "Ajuste de inventario manual a valor negativo por error operativo",
+        "Importación de CSV con stock negativo",
+        "Devolución de producto no comprado en la plataforma"
+      ]
+    },
+    {
+      "area": "Motor de descuentos y promociones",
+      "risk": "Medio-Alto",
+      "description": "Los descuentos mal implementados son la fuente más frecuente de pérdidas financieras en retail digital. Cupones acumulables, porcentajes sobre porcentajes y condiciones de validez son casos de riesgo alto.",
+      "istqb_technique": "Tabla de decisión + Análisis de valor límite",
+      "test_cases": [
+        {
+          "id": "RET-07",
+          "title": "Cupón de descuento acumulable con promoción activa",
+          "condition": "Producto tiene 30% de descuento por liquidación + usuario aplica cupón de 20% adicional. ¿Se acumulan?",
+          "expected": "El comportamiento definido en la regla de negocio se cumple exactamente: acumulable = precio * 0.7 * 0.8; no acumulable = mayor descuento aplica",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-08",
+          "title": "Cupón vencido aplicado al checkout",
+          "condition": "Usuario intenta usar cupón que expiró a medianoche del día anterior (zona horaria del servidor vs. zona horaria del usuario)",
+          "expected": "Cupón rechazado con mensaje de expiración; se usa la zona horaria del servidor de forma consistente",
+          "priority": "Media"
+        },
+        {
+          "id": "RET-09",
+          "title": "Descuento que lleva el precio a cero o negativo",
+          "condition": "Producto de $5 con cupón de $10 de descuento",
+          "expected": "Precio final = $0 máximo (nunca negativo); o cupón no aplicable si excede el precio del producto",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-10",
+          "title": "Cupón de un solo uso aplicado dos veces",
+          "condition": "Usuario aplica el mismo cupón en dos órdenes diferentes (o antes de que la primera orden sea procesada)",
+          "expected": "El segundo uso es rechazado; se valida el uso incluso entre órdenes pendientes",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Descuento aplicado a productos excluidos de la promoción",
+        "Cupón de categoría aplicado a producto de otra categoría",
+        "Descuento de 'compra 2 lleva 3' con stock de solo 2 unidades"
+      ]
+    },
+    {
+      "area": "Proceso de devolución y reembolso",
+      "risk": "Medio",
+      "description": "Los reembolsos incorrectos generan pérdidas directas. Las devoluciones sin reembolso generan reclamos y chargeback en la tarjeta.",
+      "istqb_technique": "Transición de estado + Tabla de decisión",
+      "test_cases": [
+        {
+          "id": "RET-11",
+          "title": "Devolución parcial de una orden con múltiples productos",
+          "condition": "Orden de 3 productos. Usuario devuelve solo 1. El producto tenía descuento proporcional.",
+          "expected": "Reembolso = precio pagado por ese producto (incluyendo descuento proporcional que correspondía); no el precio de lista",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-12",
+          "title": "Devolución fuera del período permitido",
+          "condition": "Usuario intenta devolver producto después de los 30 días de la política de devolución",
+          "expected": "Sistema rechaza la devolución con mensaje claro de la fecha límite; ofrece alternativas si aplica (garantía de fabricante)",
+          "priority": "Media"
+        },
+        {
+          "id": "RET-13",
+          "title": "Reembolso a tarjeta expirada",
+          "condition": "Usuario compró con tarjeta que expiró antes de la devolución",
+          "expected": "Sistema tiene flujo alternativo para reembolso: crédito en cuenta, transferencia, o gestión manual; no falla silenciosamente",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Devolución de producto digital (software, e-book) después de descarga",
+        "Devolución de producto en mal estado sin foto/documentación",
+        "Reembolso doble por error del operador"
+      ]
+    },
+    {
+      "area": "Checkout y procesamiento de pago",
+      "risk": "Alto",
+      "description": "El checkout es el punto de mayor abandono y mayor riesgo financiero. Errores aquí implican pérdida de ventas o cargos incorrectos.",
+      "istqb_technique": "Tabla de decisión + OWASP (seguridad de pagos)",
+      "test_cases": [
+        {
+          "id": "RET-14",
+          "title": "Pago rechazado por banco → usuario reintenta",
+          "condition": "Primer intento de pago rechazado por fondos insuficientes; usuario actualiza tarjeta y reintenta",
+          "expected": "Solo se cobra el segundo intento exitoso; el primer intento no genera cargo pendiente",
+          "priority": "Alta"
+        },
+        {
+          "id": "RET-15",
+          "title": "Cambio de precio durante el checkout",
+          "condition": "El precio del producto cambia (por fin de promoción) mientras el usuario está en el checkout",
+          "expected": "Se respeta el precio al momento de agregar al carrito o se notifica el cambio antes de confirmar el pago",
+          "priority": "Media"
+        },
+        {
+          "id": "RET-16",
+          "title": "Checkout con dirección de envío a zona sin cobertura",
+          "condition": "Usuario ingresa dirección en localidad no cubierta por los métodos de envío disponibles",
+          "expected": "Sistema informa claramente la falta de cobertura antes del paso de pago; no cobra sin confirmar envío",
+          "priority": "Alta"
+        }
+      ],
+      "negative_cases": [
+        "Tarjeta de crédito robada con CVV correcto (prueba de fraude)",
+        "Checkout con dirección de facturación en un país y envío en otro",
+        "Impuesto calculado incorrectamente por diferencia de jurisdicción fiscal"
+      ]
+    }
+  ]
+}

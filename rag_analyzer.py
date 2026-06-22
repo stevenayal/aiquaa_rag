@@ -38,7 +38,14 @@ except ImportError:
 from dotenv import load_dotenv
 
 _root = Path(__file__).parent
-for _env in [_root / ".env", _root / "BCP" / ".env", _root / "CONATEL" / ".env"]:
+_main = _root.parent.parent.parent  # worktrees/<name>/ → worktrees/ → .claude/ → main repo
+for _env in [
+    _root / ".env",
+    _root / "BCP" / ".env",
+    _root / "CONATEL" / ".env",
+    _main / "BCP" / ".env",
+    _main / "CONATEL" / ".env",
+]:
     if _env.exists():
         load_dotenv(_env)
         break
@@ -76,7 +83,13 @@ TOPICS_TELECOM = [
     "espectro", "concesiones", "internet", "telefonia", "radiodifusion",
     "tarifas", "interconexion",
 ]
-ALL_TOPICS = TOPICS_BANCA + TOPICS_TELECOM
+TOPICS_QA = [
+    "fundamentos_testing", "proceso_prueba", "tecnicas_caja_negra",
+    "tecnicas_caja_blanca", "tecnicas_experiencia", "gestion_pruebas",
+    "defect_management", "risk_based_testing", "automatizacion",
+    "metricas_calidad", "performance",
+]
+ALL_TOPICS = TOPICS_BANCA + TOPICS_TELECOM + TOPICS_QA
 
 # ── Clasificador por keywords (sin API) ────────────────────────────────────────
 #
@@ -149,6 +162,43 @@ KEYWORD_MAP: dict[str, list[str]] = {
     "radiodifusion":      ["televisión", "radio", "radiodifusión", "señal de tv", "cable"],
     "tarifas":            ["tarifa", "precio del servicio", "cargo de acceso"],
     "interconexion":      ["interconexión", "acceso a red", "interconnect"],
+    # QA / ISTQB
+    "fundamentos_testing": ["istqb", "ctfl", "fundamentos del testing", "principios del testing",
+                            "nivel de prueba", "tipo de prueba", "prueba de aceptacion",
+                            "prueba de sistema", "prueba de integracion", "prueba unitaria",
+                            "caja negra", "caja blanca", "prueba estatica", "prueba dinamica"],
+    "proceso_prueba":      ["proceso de prueba", "ciclo de vida de prueba",
+                            "planificacion de prueba", "analisis de prueba",
+                            "diseño de prueba", "ejecucion de prueba", "cierre de prueba"],
+    "tecnicas_caja_negra": ["particion de equivalencia", "valor limite", "tabla de decision",
+                            "transicion de estado", "caso de uso prueba",
+                            "equivalence partitioning", "boundary value"],
+    "tecnicas_caja_blanca": ["cobertura de sentencia", "cobertura de rama",
+                              "cobertura de condicion", "mc/dc", "statement coverage",
+                              "branch coverage", "decision coverage"],
+    "tecnicas_experiencia": ["prueba exploratoria", "exploratory testing",
+                              "basado en error", "error guessing", "checklist de prueba",
+                              "revision tecnica", "inspeccion", "walkthrough"],
+    "gestion_pruebas":     ["plan de prueba", "estimacion de prueba", "trazabilidad de prueba",
+                            "lider de prueba", "test manager", "independencia del testing",
+                            "monitorizacion de prueba", "control de prueba"],
+    "defect_management":   ["informe de defecto", "bug report", "ciclo de vida del defecto",
+                            "clasificacion de defecto", "severidad del defecto",
+                            "prioridad del defecto", "causa raiz del defecto"],
+    "risk_based_testing":  ["prueba basada en riesgo", "risk-based testing",
+                            "nivel de riesgo", "riesgo de producto", "riesgo de proyecto",
+                            "mitigacion de riesgo", "analisis de riesgo"],
+    "automatizacion":      ["prueba automatizada", "herramienta de prueba", "test tool",
+                            "script de prueba", "marco de automatizacion", "ci/cd testing",
+                            "integracion continua", "selenium", "pytest", "robot framework"],
+    "metricas_calidad":    ["densidad de defecto", "cobertura de prueba",
+                            "tasa de deteccion", "eficiencia de remocion",
+                            "metrica de prueba", "indicador de calidad", "kpi de testing"],
+    "performance":         ["prueba de carga", "prueba de estres", "prueba de rendimiento",
+                            "load testing", "stress testing", "throughput", "latencia",
+                            "jmeter", "apache jmeter", "usuarios concurrentes",
+                            "prueba de pico", "spike testing", "soak testing",
+                            "tiempo de respuesta", "performance testing"],
 }
 
 # Palabras que indican industria
@@ -158,6 +208,13 @@ BANCA_SIGNALS    = ["banco", "financiera", "bcp", "superintendencia de bancos",
 TELECOM_SIGNALS  = ["conatel", "telecom", "telecomunicaciones", "internet", "celular",
                     "móvil", "móviles", "operadora", "señal", "espectro", "frecuencia",
                     "televisión", "radio", "fibra óptica", "isp", "portabilidad numérica"]
+QA_SIGNALS       = ["istqb", "ctfl", "tester", "testing", "qa", "quality assurance",
+                    "caso de prueba", "caso de test", "plan de prueba", "plan de test",
+                    "defecto", "bug", "prueba de software", "ciclo de prueba",
+                    "automatizacion de prueba", "prueba funcional", "prueba no funcional",
+                    "caja negra", "caja blanca", "prueba de carga", "prueba de estres",
+                    "jmeter", "cobertura de prueba", "nivel de prueba", "tipo de prueba",
+                    "gestion de prueba", "informe de defecto", "exploratory testing"]
 
 
 def _normalize(s: str) -> str:
@@ -172,6 +229,7 @@ _KEYWORD_MAP_NORM: dict[str, list[str]] = {
 }
 _BANCA_SIGNALS_NORM   = [_normalize(kw) for kw in BANCA_SIGNALS]
 _TELECOM_SIGNALS_NORM = [_normalize(kw) for kw in TELECOM_SIGNALS]
+_QA_SIGNALS_NORM      = [_normalize(kw) for kw in QA_SIGNALS]
 
 
 def classify_keywords(requirement: str) -> "Classification":
@@ -181,19 +239,24 @@ def classify_keywords(requirement: str) -> "Classification":
     # 1. Detectar industria
     banca_score   = sum(1 for kw in _BANCA_SIGNALS_NORM   if kw in text)
     telecom_score = sum(1 for kw in _TELECOM_SIGNALS_NORM  if kw in text)
+    qa_score      = sum(1 for kw in _QA_SIGNALS_NORM       if kw in text)
 
-    if banca_score > telecom_score:
-        industry = "banca"
-    elif telecom_score > banca_score:
-        industry = "telecomunicaciones"
-    elif banca_score > 0 and telecom_score > 0:
-        industry = "ambas"
-    else:
+    max_score = max(banca_score, telecom_score, qa_score)
+
+    if max_score == 0:
         # fallback: si menciona montos/pagos/usuarios → banca
         if re.search(r'\b(monto|pago|cuenta|usuario|cliente)\b', text):
             industry = "banca"
         else:
             industry = "ninguna"
+    elif qa_score == max_score and qa_score > 0:
+        industry = "qa"
+    elif banca_score > telecom_score:
+        industry = "banca"
+    elif telecom_score > banca_score:
+        industry = "telecomunicaciones"
+    else:
+        industry = "ambas"
 
     # 2. Detectar topics
     topics = []
@@ -203,6 +266,8 @@ def classify_keywords(requirement: str) -> "Classification":
             if industry == "banca" and topic in TOPICS_BANCA:
                 topics.append(topic)
             elif industry == "telecomunicaciones" and topic in TOPICS_TELECOM:
+                topics.append(topic)
+            elif industry == "qa" and topic in TOPICS_QA:
                 topics.append(topic)
             elif industry == "ambas":
                 topics.append(topic)
@@ -249,19 +314,20 @@ def _extract_product(text: str) -> str:
 
 # ── Prompts Claude (si disponible) ────────────────────────────────────────────
 
-CLASSIFIER_SYSTEM = f"""Sos un experto en regulaciones financieras y de telecomunicaciones de Paraguay.
+CLASSIFIER_SYSTEM = f"""Sos un experto en regulaciones financieras, telecomunicaciones y QA/testing de software.
 Analizá el requerimiento y devolvé SOLO un JSON válido:
 {{
-  "industry": "<banca|telecomunicaciones|ambas|ninguna>",
+  "industry": "<banca|telecomunicaciones|qa|ambas|ninguna>",
   "topics": ["<topic>"],
   "product_description": "<descripción breve en 1 línea>",
-  "search_query": "<consulta regulatoria en 1-2 oraciones>",
+  "search_query": "<consulta en 1-2 oraciones>",
   "confidence": "<alta|media|baja>"
 }}
 
 Topics banca: {', '.join(TOPICS_BANCA)}
 Topics telecom: {', '.join(TOPICS_TELECOM)}
-Usá SOLO topics de esas listas."""
+Topics QA/ISTQB: {', '.join(TOPICS_QA)}
+Usá SOLO topics de esas listas. Si el requerimiento habla de testing, pruebas de software, QA, ISTQB o defectos → industry=qa."""
 
 ANALYZER_SYSTEM = """Sos un especialista en compliance regulatorio de Paraguay (BCP y CONATEL).
 Analizá el requerimiento e identificá qué regulaciones aplican.
@@ -281,6 +347,25 @@ Estructura tu respuesta así:
 [Si algún aspecto del requerimiento no está cubierto por las normas encontradas]
 
 Citá siempre la fuente (título + URL). Respondé en español."""
+
+ANALYZER_SYSTEM_QA = """Sos un analista QA senior con certificación ISTQB CTFL. Dado un requerimiento de software y fragmentos del syllabus ISTQB / guías de testing relevantes, generá un análisis de calidad estructurado.
+
+## Riesgos de calidad identificados
+[Riesgos funcionales y no funcionales con nivel Alto/Medio/Bajo y justificación]
+
+## Técnicas de prueba recomendadas (ISTQB)
+[Para cada área de riesgo: qué técnica aplicar y por qué — Partición de Equivalencia, Valor Límite, Tabla de Decisión, Transición de Estado, Exploratoria, etc.]
+
+## Casos de prueba clave
+[Mínimo 5 casos de prueba concretos con: ID, condición de prueba, pasos, resultado esperado, nivel de prioridad]
+
+## Checklist de cobertura
+[Dimensiones de calidad cubiertas vs. fuera de scope: funcionalidad, rendimiento, seguridad, usabilidad, compatibilidad, etc.]
+
+## Gaps y recomendaciones
+[Qué aspectos del requerimiento necesitan más información para diseñar casos de prueba completos]
+
+Basate en los fragmentos de syllabus/guías recuperados para justificar cada técnica. Respondé en español."""
 
 
 # ── Clientes ───────────────────────────────────────────────────────────────────
@@ -376,7 +461,7 @@ def embed_query(voyage, text: str) -> list[float]:
 def search_regulations(sb, query_vec: list[float], cls: Classification,
                         top_k: int, threshold: float) -> list[dict]:
 
-    filter_industry = cls.industry if cls.industry in ("banca", "telecomunicaciones") else None
+    filter_industry = cls.industry if cls.industry in ("banca", "telecomunicaciones", "qa") else None
     filter_topics   = cls.topics if cls.topics else None
 
     params = {
@@ -434,20 +519,32 @@ def build_context(chunks: list[dict]) -> str:
 
 
 def analyze_with_claude(claude, requirement: str, cls: Classification,
-                         context: str) -> str:
-    user_msg = (
-        f"REQUERIMIENTO:\n{requirement}\n\n"
-        f"PRODUCTO: {cls.product_description}\n"
-        f"INDUSTRIA: {cls.industry}  |  TEMAS: {', '.join(cls.topics) or '—'}\n\n"
-        f"{'='*60}\n"
-        f"REGULACIONES ENCONTRADAS:\n\n{context}\n"
-        f"{'='*60}\n\n"
-        f"Analizá qué regulaciones aplican y generá el checklist QA."
-    )
+                         context: str,
+                         system_prompt: str = ANALYZER_SYSTEM) -> str:
+    if cls.industry == "qa":
+        user_msg = (
+            f"REQUERIMIENTO:\n{requirement}\n\n"
+            f"PRODUCTO: {cls.product_description}\n"
+            f"TEMAS QA: {', '.join(cls.topics) or '—'}\n\n"
+            f"{'='*60}\n"
+            f"FRAGMENTOS DE SYLLABUS / GUÍAS DE TESTING RECUPERADOS:\n\n{context}\n"
+            f"{'='*60}\n\n"
+            f"Analizá los riesgos de calidad y generá los casos de prueba."
+        )
+    else:
+        user_msg = (
+            f"REQUERIMIENTO:\n{requirement}\n\n"
+            f"PRODUCTO: {cls.product_description}\n"
+            f"INDUSTRIA: {cls.industry}  |  TEMAS: {', '.join(cls.topics) or '—'}\n\n"
+            f"{'='*60}\n"
+            f"REGULACIONES ENCONTRADAS:\n\n{context}\n"
+            f"{'='*60}\n\n"
+            f"Analizá qué regulaciones aplican y generá el checklist QA."
+        )
     response = claude.messages.create(
         model=CLAUDE_ANALYZER,
         max_tokens=3000,
-        system=ANALYZER_SYSTEM,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_msg}],
     )
     return response.content[0].text
@@ -515,7 +612,7 @@ def analyze_requirement(
         return AnalysisResult(
             requirement=requirement,
             classification=cls,
-            analysis="No se identificó industria regulatoria. ¿Es banca (BCP) o telecomunicaciones (CONATEL)?",
+            analysis="No se identificó industria. ¿Es banca (BCP), telecomunicaciones (CONATEL) o QA/testing (ISTQB)?",
             mode="chunks",
         )
 
@@ -540,7 +637,9 @@ def analyze_requirement(
 
     if claude:
         log.info("Generando análisis con Claude Sonnet...")
-        analysis = analyze_with_claude(claude, requirement, cls, context)
+        system_prompt = ANALYZER_SYSTEM_QA if cls.industry == "qa" else ANALYZER_SYSTEM
+        analysis = analyze_with_claude(claude, requirement, cls, context,
+                                       system_prompt=system_prompt)
         mode = "claude"
     else:
         log.info("Formateando regulaciones encontradas (modo sin API)...")
@@ -641,7 +740,7 @@ if __name__ == "__main__":
                         help="Requerimiento a analizar (omitir = modo interactivo)")
     parser.add_argument("--top-k",     type=int,   default=DEFAULT_TOP_K)
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
-    parser.add_argument("--industry",  choices=["banca", "telecomunicaciones", "ambas"])
+    parser.add_argument("--industry",  choices=["banca", "telecomunicaciones", "ambas", "qa"])
     parser.add_argument("--topics",    type=str,
                         help="Topics forzados, separados por coma: transferencias,riesgo")
     parser.add_argument("--json",      action="store_true",
